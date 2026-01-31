@@ -62,7 +62,7 @@ class CallStatusHistory(Base):
     status = Column(Enum(CallStatus), nullable=False)
     changed_at = Column(DateTime(timezone=True), server_default=func.now())
     changed_by = Column(String(50), nullable=True)  # user, guard, system
-    metadata = Column(Text, nullable=True)  # JSON string for extra info
+    meta_info = Column(Text, nullable=True)  # JSON string for extra info
     
     # Relationships
     call = relationship("EmergencyCall", back_populates="status_history")

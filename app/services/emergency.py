@@ -104,7 +104,7 @@ class EmergencyService:
         call: EmergencyCall,
         new_status: CallStatus,
         changed_by: str = "system",
-        metadata: Optional[str] = None
+        meta_info: Optional[str] = None
     ) -> EmergencyCall:
         """Update call status"""
         call.status = new_status
@@ -129,7 +129,7 @@ class EmergencyService:
             call_id=call.id,
             status=new_status,
             changed_by=changed_by,
-            metadata=metadata
+            meta_info=meta_info
         )
         db.add(history)
         

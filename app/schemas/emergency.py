@@ -69,7 +69,7 @@ class SecurityCompanyResponse(SecurityCompanyBrief):
 
 class CallStatusUpdate(BaseModel):
     status: CallStatus
-    metadata: Optional[str] = None
+    meta_info: Optional[str] = None
 
 
 # Update forward refs

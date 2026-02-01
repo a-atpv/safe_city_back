@@ -17,15 +17,33 @@ depends_on = None
 
 
 def upgrade():
-    # --- Enums ---
-    user_status = postgresql.ENUM('active', 'inactive', 'blocked', name='userstatus')
-    user_status.create(op.get_bind(), checkfirst=True)
+    # --- Enums (Safe Create) ---
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userstatus') THEN
+            CREATE TYPE userstatus AS ENUM ('active', 'inactive', 'blocked');
+        END IF;
+    END$$;
+    """)
 
-    subscription_status = postgresql.ENUM('active', 'expired', 'cancelled', 'pending', name='subscriptionstatus')
-    subscription_status.create(op.get_bind(), checkfirst=True)
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscriptionstatus') THEN
+            CREATE TYPE subscriptionstatus AS ENUM ('active', 'expired', 'cancelled', 'pending');
+        END IF;
+    END$$;
+    """)
 
-    call_status = postgresql.ENUM('created', 'searching', 'offer_sent', 'accepted', 'en_route', 'arrived', 'completed', 'cancelled_by_user', 'cancelled_by_system', name='callstatus')
-    call_status.create(op.get_bind(), checkfirst=True)
+    op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'callstatus') THEN
+            CREATE TYPE callstatus AS ENUM ('created', 'searching', 'offer_sent', 'accepted', 'en_route', 'arrived', 'completed', 'cancelled_by_user', 'cancelled_by_system');
+        END IF;
+    END$$;
+    """)
 
     # --- Users ---
     op.create_table('users',

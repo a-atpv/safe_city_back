@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade():
+    # --- Cleanup (Drop if exists to avoid conflicts) ---
+    op.execute("DROP TYPE IF EXISTS userstatus CASCADE")
+    op.execute("DROP TYPE IF EXISTS subscriptionstatus CASCADE")
+    op.execute("DROP TYPE IF EXISTS callstatus CASCADE")
+
     # --- Enums (Safe Create) ---
     op.execute("""
     DO $$

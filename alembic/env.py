@@ -43,7 +43,7 @@ async def run_async_migrations() -> None:
     from app.core.config import settings
     
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.database_url.replace("+asyncpg", "")
+    configuration["sqlalchemy.url"] = settings.database_url
     
     connectable = async_engine_from_config(
         configuration,

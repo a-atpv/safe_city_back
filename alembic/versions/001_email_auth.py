@@ -22,35 +22,8 @@ def upgrade():
     op.execute("DROP TYPE IF EXISTS subscriptionstatus CASCADE")
     op.execute("DROP TYPE IF EXISTS callstatus CASCADE")
 
-    # --- Enums (Safe Create) ---
-    op.execute("""
-    DO $$
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userstatus') THEN
-            CREATE TYPE userstatus AS ENUM ('active', 'inactive', 'blocked');
-        END IF;
-    END$$;
-    """)
-
-    op.execute("""
-    DO $$
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscriptionstatus') THEN
-            CREATE TYPE subscriptionstatus AS ENUM ('active', 'expired', 'cancelled', 'pending');
-        END IF;
-    END$$;
-    """)
-
-    op.execute("""
-    DO $$
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'callstatus') THEN
-            CREATE TYPE callstatus AS ENUM ('created', 'searching', 'offer_sent', 'accepted', 'en_route', 'arrived', 'completed', 'cancelled_by_user', 'cancelled_by_system');
-        END IF;
-    END$$;
-    """)
-
     # --- Users ---
+    op.create_table('users',
     op.create_table('users',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('email', sa.String(length=255), nullable=False),

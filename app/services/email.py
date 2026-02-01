@@ -80,7 +80,9 @@ class EmailService:
             # Create message
             message = MIMEMultipart("alternative")
             message["Subject"] = f"Код подтверждения Safe City: {otp}"
-            message["From"] = settings.from_email
+            # Hardcoded to ensure correct sender despite env vars
+            sender_email = "alekseigradoboev553@gmail.com" 
+            message["From"] = sender_email
             message["To"] = email
             
             # Plain text version
@@ -141,7 +143,7 @@ class EmailService:
             with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
                 server.starttls(context=context)
                 server.login(settings.smtp_user, settings.smtp_password)
-                server.sendmail(settings.from_email, email, message.as_string())
+                server.sendmail(sender_email, email, message.as_string())
             
             return True
         except Exception as e:

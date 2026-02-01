@@ -27,7 +27,7 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     avatar_url = Column(String(500), nullable=True)
     
-    status = Column(Enum(UserStatus), default=UserStatus.ACTIVE)
+    status = Column(String, default=UserStatus.ACTIVE)
     is_verified = Column(Boolean, default=False)
     
     # Location (last known)
@@ -50,7 +50,7 @@ class Subscription(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     
-    status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.PENDING)
+    status = Column(String, default=SubscriptionStatus.PENDING)
     plan_type = Column(String(50), default="monthly")  # monthly, yearly
     price = Column(Integer, nullable=True)  # в тиынах (копейках)
     

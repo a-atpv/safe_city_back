@@ -11,6 +11,12 @@ class UserStatus(str, enum.Enum):
     BLOCKED = "blocked"
 
 
+class UserRole(str, enum.Enum):
+    USER = "user"
+    GUARD = "guard"
+    ADMIN = "admin"
+
+
 class SubscriptionStatus(str, enum.Enum):
     ACTIVE = "active"
     EXPIRED = "expired"
@@ -28,6 +34,7 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
     
     status = Column(String, default=UserStatus.ACTIVE)
+    role = Column(String, default=UserRole.USER)
     is_verified = Column(Boolean, default=False)
     
     # Location (last known)

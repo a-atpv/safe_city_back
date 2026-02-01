@@ -85,7 +85,8 @@ async def verify_otp(
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_in=settings.access_token_expire_minutes * 60
+        expires_in=settings.access_token_expire_minutes * 60,
+        role=user.role
     )
 
 

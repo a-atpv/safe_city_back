@@ -19,6 +19,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    role: str = "user"
 
 
 class RefreshTokenRequest(BaseModel):
@@ -47,6 +48,7 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     phone: Optional[str] = None
+    role: str = "user"
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_verified: bool

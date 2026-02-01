@@ -16,8 +16,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     
-    # Brevo SMS
-    brevo_api_key: Optional[str] = None
+    # SMTP (Brevo)
+    smtp_host: str = "smtp-relay.brevo.com"
+    smtp_port: int = 587
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    from_email: str = "noreply@safecity.app"
     
     # App
     env: str = "development"

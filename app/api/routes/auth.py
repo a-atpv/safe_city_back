@@ -2,40 +2,39 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db, create_access_token, create_refresh_token, decode_token
 from app.schemas import (
-    PhoneRequest, 
+    EmailRequest, 
     VerifyOTPRequest, 
     TokenResponse, 
     RefreshTokenRequest,
     APIResponse
 )
-from app.services import send_otp_to_phone, OTPService, UserService
+from app.services import send_otp_to_email, OTPService, UserService
 from app.core.config import settings
 from datetime import timedelta
-import phonenumbers
+import re
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-def normalize_phone(phone: str) -> str:
-    """Normalize phone number to E164 format"""
-    try:
-        parsed = phonenumbers.parse(phone, "KZ")
-        if not phonenumbers.is_valid_number(parsed):
-            raise ValueError("Invalid phone number")
-        return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-    except Exception:
+def validate_email(email: str) -> str:
+    """Validate and normalize email address"""
+    email = email.strip().lower()
+    # Basic email regex validation
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_regex, email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid phone number format"
+            detail="Invalid email address format"
         )
+    return email
 
 
 @router.post("/request-otp", response_model=APIResponse)
-async def request_otp(data: PhoneRequest):
-    """Request OTP code for phone number"""
-    phone = normalize_phone(data.phone)
+async def request_otp(data: EmailRequest):
+    """Request OTP code for email address"""
+    email = validate_email(data.email)
     
-    success, debug_otp = await send_otp_to_phone(phone)
+    success, debug_otp = await send_otp_to_email(email)
     
     if not success:
         raise HTTPException(
@@ -43,7 +42,7 @@ async def request_otp(data: PhoneRequest):
             detail="Failed to send OTP"
         )
     
-    response_data = {"phone": phone}
+    response_data = {"email": email}
     if settings.debug and debug_otp:
         response_data["otp"] = debug_otp  # Only in debug mode!
     
@@ -60,21 +59,21 @@ async def verify_otp(
     db: AsyncSession = Depends(get_db)
 ):
     """Verify OTP and return tokens"""
-    phone = normalize_phone(data.phone)
+    email = validate_email(data.email)
     
-    is_valid = await OTPService.verify_otp(phone, data.code)
+    is_valid = await OTPService.verify_otp(email, data.code)
     
     if not is_valid:
-        remaining = await OTPService.get_remaining_attempts(phone)
+        remaining = await OTPService.get_remaining_attempts(email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid OTP code. Attempts remaining: {remaining}"
         )
     
     # Get or create user
-    user = await UserService.get_by_phone(db, phone)
+    user = await UserService.get_by_email(db, email)
     if not user:
-        user = await UserService.create(db, phone)
+        user = await UserService.create(db, email)
     
     # Generate tokens
     access_token = create_access_token(

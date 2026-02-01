@@ -1,5 +1,5 @@
 from app.schemas.user import (
-    PhoneRequest,
+    EmailRequest,
     VerifyOTPRequest,
     TokenResponse,
     RefreshTokenRequest,
@@ -24,7 +24,7 @@ from app.schemas.emergency import (
 from app.schemas.common import APIResponse, ErrorResponse, PaginatedResponse
 
 __all__ = [
-    "PhoneRequest",
+    "EmailRequest",
     "VerifyOTPRequest",
     "TokenResponse",
     "RefreshTokenRequest",

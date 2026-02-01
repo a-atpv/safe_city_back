@@ -1,16 +1,16 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime
 
 
 # ============ Auth Schemas ============
 
-class PhoneRequest(BaseModel):
-    phone: str = Field(..., description="Phone number in format +77001234567")
+class EmailRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email address")
 
 
 class VerifyOTPRequest(BaseModel):
-    phone: str = Field(..., description="Phone number")
+    email: EmailStr = Field(..., description="Email address")
     code: str = Field(..., min_length=4, max_length=6, description="OTP code")
 
 
@@ -28,9 +28,9 @@ class RefreshTokenRequest(BaseModel):
 # ============ User Schemas ============
 
 class UserBase(BaseModel):
-    phone: str
+    email: EmailStr
+    phone: Optional[str] = None
     full_name: Optional[str] = None
-    email: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -39,12 +39,15 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
-    email: Optional[str] = None
+    phone: Optional[str] = None
     avatar_url: Optional[str] = None
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: int
+    email: EmailStr
+    phone: Optional[str] = None
+    full_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_verified: bool
     created_at: datetime

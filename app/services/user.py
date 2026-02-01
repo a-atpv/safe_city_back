@@ -10,10 +10,10 @@ class UserService:
     """Service for user management"""
     
     @staticmethod
-    async def get_by_phone(db: AsyncSession, phone: str) -> Optional[User]:
-        """Get user by phone number"""
+    async def get_by_email(db: AsyncSession, email: str) -> Optional[User]:
+        """Get user by email address"""
         result = await db.execute(
-            select(User).where(User.phone == phone)
+            select(User).where(User.email == email.lower())
         )
         return result.scalar_one_or_none()
     
@@ -36,9 +36,9 @@ class UserService:
         return result.scalar_one_or_none()
     
     @staticmethod
-    async def create(db: AsyncSession, phone: str) -> User:
+    async def create(db: AsyncSession, email: str) -> User:
         """Create new user"""
-        user = User(phone=phone, is_verified=True)
+        user = User(email=email.lower(), is_verified=True)
         db.add(user)
         await db.flush()
         await db.refresh(user)

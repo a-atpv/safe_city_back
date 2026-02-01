@@ -1,11 +1,11 @@
-from app.services.sms import OTPService, SMSService, send_otp_to_phone
+from app.services.email import OTPService, EmailService, send_otp_to_email
 from app.services.user import UserService, DeviceService
 from app.services.emergency import EmergencyService, SecurityCompanyService
 
 __all__ = [
     "OTPService",
-    "SMSService",
-    "send_otp_to_phone",
+    "EmailService",
+    "send_otp_to_email",
     "UserService",
     "DeviceService",
     "EmergencyService",

@@ -9,13 +9,10 @@ async def init_redis():
     global redis_client
     # Heroku Redis uses rediss:// (TLS) which requires ssl configuration
     if settings.redis_url.startswith("rediss://"):
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
         redis_client = redis.from_url(
             settings.redis_url, 
             decode_responses=True,
-            ssl=ssl_context
+            ssl_cert_reqs="none"
         )
     else:
         redis_client = redis.from_url(settings.redis_url, decode_responses=True)

@@ -24,7 +24,6 @@ def upgrade():
 
     # --- Users ---
     op.create_table('users',
-    op.create_table('users',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('email', sa.String(length=255), nullable=False),
         sa.Column('phone', sa.String(length=20), nullable=True),

@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 from typing import Optional
 from functools import lru_cache
 
@@ -6,6 +7,15 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://safecity:safecity_secret_2024@localhost:5432/safecity"
+
+    @model_validator(mode="after")
+    def fix_database_url(self):
+        """Convert Heroku's postgres:// to postgresql+asyncpg:// for async SQLAlchemy."""
+        if self.database_url.startswith("postgres://"):
+            self.database_url = self.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif self.database_url.startswith("postgresql://"):
+            self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self
     
     # Redis
     redis_url: str = "redis://localhost:6379/0"

@@ -42,6 +42,10 @@ class User(Base):
     last_longitude = Column(Float, nullable=True)
     last_location_update = Column(DateTime(timezone=True), nullable=True)
     
+    # Profile extras
+    city = Column(String(100), nullable=True)
+    language = Column(String(5), default="ru")  # ru, kk, en
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -49,6 +53,10 @@ class User(Base):
     subscription = relationship("Subscription", back_populates="user", uselist=False)
     emergency_calls = relationship("EmergencyCall", back_populates="user")
     devices = relationship("UserDevice", back_populates="user")
+    settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user")
+    reviews = relationship("Review", back_populates="user")
+    payments = relationship("Payment", back_populates="user")
 
 
 class Subscription(Base):
@@ -74,6 +82,7 @@ class Subscription(Base):
     
     # Relationships
     user = relationship("User", back_populates="subscription")
+    payments = relationship("Payment", back_populates="subscription")
 
 
 class UserDevice(Base):

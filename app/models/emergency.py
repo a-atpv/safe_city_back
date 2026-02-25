@@ -32,7 +32,14 @@ class EmergencyCall(Base):
     
     # Assigned security company/guard
     security_company_id = Column(Integer, ForeignKey("security_companies.id"), nullable=True)
-    guard_id = Column(Integer, nullable=True)  # Will be FK to guard app later
+    guard_id = Column(Integer, ForeignKey("guards.id"), nullable=True)
+    
+    # ETA & timing
+    estimated_arrival_minutes = Column(Integer, nullable=True)
+    response_time_minutes = Column(Integer, nullable=True)
+    
+    # Optional user message at call creation
+    user_message = Column(Text, nullable=True)
     
     # Timing
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -50,7 +57,11 @@ class EmergencyCall(Base):
     # Relationships
     user = relationship("User", back_populates="emergency_calls")
     security_company = relationship("SecurityCompany", back_populates="calls")
+    guard = relationship("Guard", back_populates="emergency_calls")
     status_history = relationship("CallStatusHistory", back_populates="call")
+    messages = relationship("CallMessage", back_populates="call", cascade="all, delete-orphan")
+    review = relationship("Review", back_populates="call", uselist=False)
+    report = relationship("CallReport", back_populates="call", uselist=False)
 
 
 class CallStatusHistory(Base):

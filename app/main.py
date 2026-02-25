@@ -19,8 +19,8 @@ app = FastAPI(
     description="API for Safe City emergency response system",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # CORS
@@ -46,5 +46,5 @@ async def root():
     return {
         "name": "Safe City API",
         "version": "1.0.0",
-        "docs": "/docs" if settings.debug else "disabled"
+        "docs": "/docs"
     }

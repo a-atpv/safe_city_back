@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     
-    # SMTP (Brevo)
+    # SMTP / Brevo API
+    brevo_api_key: Optional[str] = None
     smtp_host: str = "smtp-relay.brevo.com"
     smtp_port: int = 587
     smtp_user: Optional[str] = None

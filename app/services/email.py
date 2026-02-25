@@ -1,8 +1,5 @@
 import random
-import smtplib
-import ssl
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import httpx
 from typing import Optional
 from app.core.config import settings
 from app.core.redis import get_redis
@@ -66,86 +63,56 @@ class OTPService:
 
 
 class EmailService:
-    """Service for sending emails via SMTP (Brevo)"""
+    """Service for sending emails via Brevo REST API"""
+    
+    BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
     
     @classmethod
-    def send_otp(cls, email: str, otp: str) -> bool:
-        """Send OTP via Email"""
-        if not settings.smtp_user or not settings.smtp_password:
+    async def send_otp(cls, email: str, otp: str) -> bool:
+        """Send OTP via Email using Brevo REST API"""
+        if not settings.brevo_api_key:
             # Development mode - just log
             print(f"[DEV] Email to {email}: Your Safe City code: {otp}")
             return True
         
         try:
-            # Create message
-            message = MIMEMultipart("alternative")
-            message["Subject"] = f"Код подтверждения Safe City: {otp}"
-            # Hardcoded to ensure correct sender despite env vars
-            sender_email = "alekseigradoboev553@gmail.com" 
-            message["From"] = sender_email
-            message["To"] = email
-            
-            # Plain text version
-            text = f"""
-Ваш код для Safe City: {otp}
-
-Код действителен {settings.otp_expire_minutes} минут.
-Не сообщайте этот код никому.
-
-С уважением,
-Команда Safe City
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; padding: 40px;">
+                <div style="max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 16px; padding: 40px; border: 1px solid #334155;">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <span style="font-size: 32px;">🛡️</span>
+                        <h1 style="color: #f1f5f9; margin-top: 20px; font-size: 24px;">Safe City</h1>
+                    </div>
+                    <p style="color: #94a3b8; font-size: 16px; text-align: center;">Ваш код подтверждения:</p>
+                    <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+                        <span style="font-size: 36px; font-weight: bold; color: white; letter-spacing: 8px;">{otp}</span>
+                    </div>
+                    <p style="color: #64748b; font-size: 14px; text-align: center;">Код действителен {settings.otp_expire_minutes} минут.</p>
+                </div>
+            </body>
+            </html>
             """
             
-            # HTML version
-            html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-</head>
-<body style="font-family: Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; padding: 40px;">
-    <div style="max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 16px; padding: 40px; border: 1px solid #334155;">
-        <div style="text-align: center; margin-bottom: 30px;">
-            <div style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 16px; border-radius: 12px;">
-                <span style="font-size: 32px;">🛡️</span>
-            </div>
-            <h1 style="color: #f1f5f9; margin-top: 20px; font-size: 24px;">Safe City</h1>
-        </div>
-        
-        <p style="color: #94a3b8; font-size: 16px; text-align: center;">Ваш код подтверждения:</p>
-        
-        <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
-            <span style="font-size: 36px; font-weight: bold; color: white; letter-spacing: 8px;">{otp}</span>
-        </div>
-        
-        <p style="color: #64748b; font-size: 14px; text-align: center;">
-            Код действителен {settings.otp_expire_minutes} минут.<br>
-            Не сообщайте этот код никому.
-        </p>
-        
-        <hr style="border: none; border-top: 1px solid #334155; margin: 30px 0;">
-        
-        <p style="color: #475569; font-size: 12px; text-align: center;">
-            Если вы не запрашивали этот код, проигнорируйте это письмо.
-        </p>
-    </div>
-</body>
-</html>
-            """
-            
-            part1 = MIMEText(text, "plain")
-            part2 = MIMEText(html, "html")
-            message.attach(part1)
-            message.attach(part2)
-            
-            # Send email
-            context = ssl.create_default_context()
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-                server.starttls(context=context)
-                server.login(settings.smtp_user, settings.smtp_password)
-                server.sendmail(sender_email, email, message.as_string())
-            
-            return True
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    cls.BREVO_API_URL,
+                    headers={
+                        "api-key": settings.brevo_api_key,
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "sender": {"email": "alekseigradoboev553@gmail.com", "name": "Safe City"},
+                        "to": [{"email": email}],
+                        "subject": f"Код подтверждения Safe City: {otp}",
+                        "htmlContent": html_content
+                    }
+                )
+                if response.status_code not in (200, 201, 202):
+                    print(f"Brevo email error {response.status_code}: {response.text}")
+                    return False
+                return True
         except Exception as e:
             print(f"Email sending error: {e}")
             return False
@@ -156,7 +123,7 @@ async def send_otp_to_email(email: str) -> tuple[bool, Optional[str]]:
     otp = OTPService.generate_otp()
     await OTPService.store_otp(email, otp)
     
-    success = EmailService.send_otp(email, otp)
+    success = await EmailService.send_otp(email, otp)
     
     if settings.debug:
         # Return OTP in debug mode for testing

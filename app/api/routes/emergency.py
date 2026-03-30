@@ -23,6 +23,8 @@ async def create_emergency_call(
     db: AsyncSession = Depends(get_db)
 ):
     """Create new emergency call (SOS button)"""
+    from app.services.dispatch import DispatchService
+
     # Check if user already has an active call
     active_call = await EmergencyService.get_active_call(db, current_user.id)
     if active_call:
@@ -37,7 +39,13 @@ async def create_emergency_call(
     # Start searching for security company
     call = await EmergencyService.start_search(db, call)
     
-    # TODO: Trigger background task to find and notify security companies
+    # Find and assign the nearest available guard
+    guard = await DispatchService.assign_nearest_guard(db, call)
+    # Note: if guard is None, call stays in SEARCHING status
+    # and can be manually assigned by admin or retried later
+    
+    # Re-fetch call with updated relationships
+    call = await EmergencyService.get_by_id(db, call.id)
     
     return call
 

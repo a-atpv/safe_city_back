@@ -79,13 +79,35 @@ async def decline_call(
     current_guard: Guard = Depends(get_current_guard),
     db: AsyncSession = Depends(get_db)
 ):
-    """Decline incoming emergency call"""
+    """Decline incoming emergency call and reassign to next nearest guard"""
+    from app.services.dispatch import DispatchService
+
     call = await EmergencyService.get_by_id(db, call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
 
-    # TODO: Trigger reassignment to next available guard
-    return APIResponse(success=True, message="Call declined, reassigning...")
+    # Only allow decline if the call is currently offered to this guard
+    if call.status not in [CallStatus.OFFER_SENT, CallStatus.SEARCHING]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Call cannot be declined in current state"
+        )
+
+    # Reassign to the next nearest guard
+    next_guard = await DispatchService.reassign_after_decline(
+        db, call, declining_guard=current_guard
+    )
+
+    if next_guard:
+        return APIResponse(
+            success=True,
+            message=f"Call declined. Reassigned to {next_guard.full_name}."
+        )
+    else:
+        return APIResponse(
+            success=True,
+            message="Call declined. No available guards found — call cancelled."
+        )
 
 
 @router.post("/call/{call_id}/en-route", response_model=EmergencyCallResponse)

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core import init_redis, close_redis, settings
+from app.core import init_redis, close_redis, connect_db, settings
 from app.api import api_router
 
 
@@ -9,6 +9,7 @@ from app.api import api_router
 async def lifespan(app: FastAPI):
     # Startup
     await init_redis()
+    await connect_db()
     yield
     # Shutdown
     await close_redis()

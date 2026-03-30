@@ -27,3 +27,4 @@ phonenumbers==8.13.29
 
 # Geolocation
 geopy==2.4.1
+polyline==2.0.2

@@ -5,6 +5,7 @@ from app.services.emergency import EmergencyService, SecurityCompanyService
 from app.services.guard import GuardService, GuardShiftService, GuardSettingsService, GuardDeviceService
 from app.services.admin import CompanyAdminService
 from app.services.geocoding import OpenStreetMapService
+from app.services.routing import RoutingService
 
 __all__ = [
     "EmailOTPService",
@@ -22,4 +23,6 @@ __all__ = [
     "GuardSettingsService",
     "GuardDeviceService",
     "CompanyAdminService",
+    "RoutingService",
 ]
+

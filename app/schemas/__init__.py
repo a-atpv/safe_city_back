@@ -71,6 +71,13 @@ from app.schemas.extras import (
     FAQListResponse,
     SupportContactsResponse,
 )
+from app.schemas.routing import (
+    RouteRequest,
+    RouteResponse,
+    RouteStepResponse,
+    CallRouteResponse,
+    ETAResponse,
+)
 
 __all__ = [
     # User auth
@@ -145,4 +152,10 @@ __all__ = [
     "FAQItemResponse",
     "FAQListResponse",
     "SupportContactsResponse",
+    # Routing
+    "RouteRequest",
+    "RouteResponse",
+    "RouteStepResponse",
+    "CallRouteResponse",
+    "ETAResponse",
 ]

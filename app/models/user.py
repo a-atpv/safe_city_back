@@ -5,19 +5,19 @@ from app.core.database import Base
 import enum
 
 
-class UserStatus(str, enum.Enum):
+class UserStatus(enum.StrEnum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     BLOCKED = "blocked"
 
 
-class UserRole(str, enum.Enum):
+class UserRole(enum.StrEnum):
     USER = "user"
     GUARD = "guard"
     ADMIN = "admin"
 
 
-class SubscriptionStatus(str, enum.Enum):
+class SubscriptionStatus(enum.StrEnum):
     ACTIVE = "active"
     EXPIRED = "expired"
     CANCELLED = "cancelled"

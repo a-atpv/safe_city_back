@@ -5,7 +5,7 @@ from app.core.database import Base
 import enum
 
 
-class CallStatus(str, enum.Enum):
+class CallStatus(enum.StrEnum):
     CREATED = "created"
     SEARCHING = "searching"
     OFFER_SENT = "offer_sent"
@@ -23,7 +23,7 @@ class EmergencyCall(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    status = Column(Enum(CallStatus), default=CallStatus.CREATED)
+    status = Column(String, default=CallStatus.CREATED)
     
     # User location at call time
     latitude = Column(Float, nullable=False)
@@ -70,7 +70,7 @@ class CallStatusHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     call_id = Column(Integer, ForeignKey("emergency_calls.id"), nullable=False)
     
-    status = Column(Enum(CallStatus), nullable=False)
+    status = Column(String, nullable=False)
     changed_at = Column(DateTime(timezone=True), server_default=func.now())
     changed_by = Column(String(50), nullable=True)  # user, guard, system
     meta_info = Column(Text, nullable=True)  # JSON string for extra info

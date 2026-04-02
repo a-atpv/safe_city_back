@@ -45,6 +45,16 @@ async def get_active_call(
     return call
 
 
+@router.get("/calls/available", response_model=List[EmergencyCallResponse])
+async def get_available_calls(
+    current_guard: Guard = Depends(get_current_guard),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all calls currently searching for a guard"""
+    calls = await EmergencyService.get_available_calls(db)
+    return calls
+
+
 @router.post("/call/{call_id}/accept", response_model=EmergencyCallResponse)
 async def accept_call(
     call_id: int,

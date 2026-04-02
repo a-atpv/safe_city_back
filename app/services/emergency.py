@@ -157,6 +157,18 @@ class EmergencyService:
         )
 
 
+    @staticmethod
+    async def get_available_calls(db: AsyncSession, limit: int = 20) -> List[EmergencyCall]:
+        """Get all calls currently searching for a guard"""
+        result = await db.execute(
+            select(EmergencyCall)
+            .where(EmergencyCall.status == CallStatus.SEARCHING)
+            .order_by(desc(EmergencyCall.created_at))
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+
 class SecurityCompanyService:
     """Service for security companies management"""
     

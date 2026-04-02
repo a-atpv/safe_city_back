@@ -1,0 +1,2 @@
+# Rule: Maintain Project Context
+Always update `.antigravity-context.md` after completing a task if the project architecture, key models, or core logic have changed. This ensures subsequent prompts have access to accurate, token-efficient context.

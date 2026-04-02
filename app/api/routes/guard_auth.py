@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db, create_access_token, create_refresh_token, decode_token
@@ -7,6 +8,8 @@ from app.services.email import OTPService, send_otp_to_email
 from app.services.guard import GuardService
 from app.core.config import settings
 from datetime import timedelta
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/guard/auth", tags=["Guard Authentication"])
 
@@ -35,19 +38,20 @@ async def request_otp(
 
     success, debug_otp = await send_otp_to_email(email)
 
-    if not success:
+    if not success and not settings.debug:
+        logger.error(f"Failed to send OTP to {email}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send OTP"
+            detail="Failed to send OTP. Please check your email configuration."
         )
 
     response_data = {"email": email}
-    if settings.debug and debug_otp:
+    if debug_otp:
         response_data["otp"] = debug_otp
 
     return APIResponse(
-        success=True,
-        message="OTP sent successfully",
+        success=success, # might be False if debug and email failed
+        message="OTP sent successfully" if success else "OTP generated (Email delivery failed - Debug mode)",
         data=response_data
     )
 

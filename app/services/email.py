@@ -1,8 +1,11 @@
+import logging
 import random
 import httpx
 from typing import Optional
 from app.core.config import settings
 from app.core.redis import get_redis
+
+logger = logging.getLogger(__name__)
 
 
 class OTPService:
@@ -20,36 +23,54 @@ class OTPService:
     @classmethod
     async def store_otp(cls, email: str, otp: str) -> None:
         """Store OTP in Redis with expiration"""
-        redis = get_redis()
-        key = f"{cls.OTP_PREFIX}{email.lower()}"
-        await redis.setex(key, settings.otp_expire_minutes * 60, otp)
-        # Reset attempts
-        attempts_key = f"{cls.OTP_ATTEMPTS_PREFIX}{email.lower()}"
-        await redis.delete(attempts_key)
+        try:
+            redis = get_redis()
+            if not redis:
+                logger.error("Redis client is not initialized")
+                return
+
+            key = f"{cls.OTP_PREFIX}{email.lower()}"
+            await redis.setex(key, settings.otp_expire_minutes * 60, otp)
+            # Reset attempts
+            attempts_key = f"{cls.OTP_ATTEMPTS_PREFIX}{email.lower()}"
+            await redis.delete(attempts_key)
+        except Exception as e:
+            logger.error(f"Error storing OTP in Redis for {email}: {e}")
+            # We don't raise here to allow the flow to continue if possible, 
+            # though verification will fail later if Redis is down.
+            # However, for stability, we log it.
     
     @classmethod
     async def verify_otp(cls, email: str, otp: str) -> bool:
         """Verify OTP code"""
-        redis = get_redis()
-        key = f"{cls.OTP_PREFIX}{email.lower()}"
-        attempts_key = f"{cls.OTP_ATTEMPTS_PREFIX}{email.lower()}"
-        
-        # Check attempts
-        attempts = await redis.get(attempts_key)
-        if attempts and int(attempts) >= cls.MAX_ATTEMPTS:
+        try:
+            redis = get_redis()
+            if not redis:
+                logger.error("Redis client is not initialized")
+                return False
+
+            key = f"{cls.OTP_PREFIX}{email.lower()}"
+            attempts_key = f"{cls.OTP_ATTEMPTS_PREFIX}{email.lower()}"
+            
+            # Check attempts
+            attempts = await redis.get(attempts_key)
+            if attempts and int(attempts) >= cls.MAX_ATTEMPTS:
+                return False
+            
+            stored_otp = await redis.get(key)
+            if stored_otp and stored_otp == otp:
+                # Delete OTP after successful verification
+                await redis.delete(key)
+                await redis.delete(attempts_key)
+                return True
+            
+            # Increment attempts
+            await redis.incr(attempts_key)
+            await redis.expire(attempts_key, settings.otp_expire_minutes * 60)
             return False
-        
-        stored_otp = await redis.get(key)
-        if stored_otp and stored_otp == otp:
-            # Delete OTP after successful verification
-            await redis.delete(key)
-            await redis.delete(attempts_key)
-            return True
-        
-        # Increment attempts
-        await redis.incr(attempts_key)
-        await redis.expire(attempts_key, settings.otp_expire_minutes * 60)
-        return False
+        except Exception as e:
+            logger.error(f"Error verifying OTP in Redis for {email}: {e}")
+            return False
     
     @classmethod
     async def get_remaining_attempts(cls, email: str) -> int:
@@ -110,11 +131,11 @@ class EmailService:
                     }
                 )
                 if response.status_code not in (200, 201, 202):
-                    print(f"Brevo email error {response.status_code}: {response.text}")
+                    logger.error(f"Brevo email error {response.status_code}: {response.text}")
                     return False
                 return True
         except Exception as e:
-            print(f"Email sending error: {e}")
+            logger.error(f"Email sending exception: {e}")
             return False
 
 

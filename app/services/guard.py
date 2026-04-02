@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select, desc, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -82,7 +82,7 @@ class GuardService:
         """Update guard's real-time location"""
         guard.current_latitude = latitude
         guard.current_longitude = longitude
-        guard.last_location_update = datetime.utcnow()
+        guard.last_location_update = datetime.now(timezone.utc)
         await db.flush()
         return guard
 
@@ -187,7 +187,7 @@ class GuardShiftService:
         shift = result.scalar_one_or_none()
 
         if shift:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             shift.ended_at = now
             if shift.started_at:
                 shift.duration_minutes = int((now - shift.started_at).total_seconds() / 60)

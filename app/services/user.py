@@ -62,10 +62,10 @@ class UserService:
         longitude: float
     ) -> User:
         """Update user's last known location"""
-        from datetime import datetime
+        from datetime import datetime, timezone
         user.last_latitude = latitude
         user.last_longitude = longitude
-        user.last_location_update = datetime.utcnow()
+        user.last_location_update = datetime.now(timezone.utc)
         await db.flush()
         return user
     

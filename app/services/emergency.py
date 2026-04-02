@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -108,7 +108,7 @@ class EmergencyService:
     ) -> EmergencyCall:
         """Update call status"""
         call.status = new_status
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Update timestamps based on status
         if new_status == CallStatus.ACCEPTED:

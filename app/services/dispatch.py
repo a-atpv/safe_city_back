@@ -28,7 +28,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlat = lat2 - lat1
     dlon = lon2 - lon1
     a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-    return 2 * 6371 * asin(sqrt(a))
+    return 2 * 6371 * asin(min(1.0, sqrt(a)))
 
 
 class DispatchService:

@@ -31,6 +31,7 @@ async def get_active_call(
     result = await db.execute(
         select(EmergencyCall)
         .options(selectinload(EmergencyCall.security_company))
+        .options(selectinload(EmergencyCall.user))
         .where(
             EmergencyCall.guard_id == current_guard.id,
             EmergencyCall.status.in_(active_statuses)

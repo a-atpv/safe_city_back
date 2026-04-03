@@ -162,6 +162,7 @@ class EmergencyService:
         """Get all calls currently searching for a guard"""
         result = await db.execute(
             select(EmergencyCall)
+            .options(selectinload(EmergencyCall.user))
             .where(EmergencyCall.status == CallStatus.SEARCHING)
             .order_by(desc(EmergencyCall.created_at))
             .limit(limit)

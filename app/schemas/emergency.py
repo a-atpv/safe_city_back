@@ -10,6 +10,15 @@ class EmergencyCallCreate(BaseModel):
     address: Optional[str] = None
 
 
+class UserBrief(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class EmergencyCallResponse(BaseModel):
     id: int
     status: CallStatus
@@ -24,6 +33,7 @@ class EmergencyCallResponse(BaseModel):
     completed_at: Optional[datetime] = None
     
     security_company: Optional["SecurityCompanyBrief"] = None
+    user: Optional[UserBrief] = None
     
     class Config:
         from_attributes = True

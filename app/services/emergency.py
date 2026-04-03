@@ -35,16 +35,18 @@ class EmergencyService:
         )
         db.add(history)
         await db.flush()
-        await db.refresh(call)
         
-        return call
+        return await EmergencyService.get_by_id(db, call.id)
     
     @staticmethod
     async def get_by_id(db: AsyncSession, call_id: int) -> Optional[EmergencyCall]:
         """Get call by ID"""
         result = await db.execute(
             select(EmergencyCall)
-            .options(selectinload(EmergencyCall.security_company))
+            .options(
+                selectinload(EmergencyCall.security_company),
+                selectinload(EmergencyCall.user)
+            )
             .where(EmergencyCall.id == call_id)
         )
         return result.scalar_one_or_none()
@@ -62,7 +64,10 @@ class EmergencyService:
         ]
         result = await db.execute(
             select(EmergencyCall)
-            .options(selectinload(EmergencyCall.security_company))
+            .options(
+                selectinload(EmergencyCall.security_company),
+                selectinload(EmergencyCall.user)
+            )
             .where(
                 EmergencyCall.user_id == user_id,
                 EmergencyCall.status.in_(active_statuses)
@@ -89,6 +94,7 @@ class EmergencyService:
         # Get calls
         result = await db.execute(
             select(EmergencyCall)
+            .options(selectinload(EmergencyCall.user))
             .where(EmergencyCall.user_id == user_id)
             .order_by(desc(EmergencyCall.created_at))
             .offset(offset)
@@ -134,8 +140,7 @@ class EmergencyService:
         db.add(history)
         
         await db.flush()
-        await db.refresh(call)
-        return call
+        return await EmergencyService.get_by_id(db, call.id)
     
     @staticmethod
     async def cancel_call(

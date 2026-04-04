@@ -134,6 +134,12 @@ class EmergencyService:
             call.cancelled_at = now
         
         # Add to history
+        history = CallStatusHistory(
+            call_id=call.id,
+            status=new_status,
+            changed_by=changed_by,
+            meta_info=meta_info
+        )
         db.add(history)
         await db.flush()
 

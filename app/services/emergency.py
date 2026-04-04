@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.models import EmergencyCall, CallStatusHistory, CallStatus, SecurityCompany
+from app.models import EmergencyCall, CallStatusHistory, CallStatus, SecurityCompany, User, Guard
 from app.schemas import EmergencyCallCreate
+from app.services.notifications import notification_service
 
 
 class EmergencyService:
@@ -45,7 +46,8 @@ class EmergencyService:
             select(EmergencyCall)
             .options(
                 selectinload(EmergencyCall.security_company),
-                selectinload(EmergencyCall.user)
+                selectinload(EmergencyCall.user).selectinload(User.devices),
+                selectinload(EmergencyCall.guard).selectinload(Guard.devices)
             )
             .where(EmergencyCall.id == call_id)
         )
@@ -66,7 +68,8 @@ class EmergencyService:
             select(EmergencyCall)
             .options(
                 selectinload(EmergencyCall.security_company),
-                selectinload(EmergencyCall.user)
+                selectinload(EmergencyCall.user).selectinload(User.devices),
+                selectinload(EmergencyCall.guard).selectinload(Guard.devices)
             )
             .where(
                 EmergencyCall.user_id == user_id,
@@ -131,16 +134,15 @@ class EmergencyService:
             call.cancelled_at = now
         
         # Add to history
-        history = CallStatusHistory(
-            call_id=call.id,
-            status=new_status,
-            changed_by=changed_by,
-            meta_info=meta_info
-        )
         db.add(history)
-        
         await db.flush()
-        return await EmergencyService.get_by_id(db, call.id)
+
+        # Notify user via WebSockets
+        updated_call = await EmergencyService.get_by_id(db, call.id)
+        if updated_call:
+            await notification_service.notify_call_status_update(updated_call)
+        
+        return updated_call
     
     @staticmethod
     async def cancel_call(

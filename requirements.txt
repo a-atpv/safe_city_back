@@ -24,6 +24,7 @@ httpx==0.26.0
 # Utils
 python-dateutil==2.8.2
 phonenumbers==8.13.29
+firebase-admin==6.4.0
 
 # Geolocation
 geopy==2.4.1

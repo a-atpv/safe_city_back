@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -191,3 +192,43 @@ async def require_admin_owner(
             detail="Owner privileges required"
         )
     return current_admin
+
+
+# ============ WebSocket Dependencies ============
+
+async def get_ws_current_user(
+    db: AsyncSession,
+    token: str
+) -> Optional[User]:
+    """Helper for WebSocket user authentication"""
+    try:
+        payload = decode_token(token)
+        if not payload or payload.get("type") != "access" or payload.get("role", "user") != "user":
+            return None
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+            
+        return await UserService.get_by_id(db, int(user_id))
+    except Exception:
+        return None
+
+
+async def get_ws_current_guard(
+    db: AsyncSession,
+    token: str
+) -> Optional[Guard]:
+    """Helper for WebSocket guard authentication"""
+    try:
+        payload = decode_token(token)
+        if not payload or payload.get("type") != "access" or payload.get("role") != "guard":
+            return None
+        
+        guard_id = payload.get("sub")
+        if not guard_id:
+            return None
+            
+        return await GuardService.get_by_id(db, int(guard_id))
+    except Exception:
+        return None

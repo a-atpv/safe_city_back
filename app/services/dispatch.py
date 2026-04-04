@@ -14,12 +14,14 @@ from math import radians, cos, sin, asin, sqrt
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
-    Guard,
+    Notification,
     EmergencyCall,
     CallStatus,
     CallStatusHistory,
-    Notification,
+    Guard,
 )
+from sqlalchemy.orm import selectinload
+from app.services.notifications import notification_service
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -147,6 +149,9 @@ class DispatchService:
         await db.flush()
         await db.refresh(call)
 
+        # Notify the guard via WebSockets and FCM
+        await notification_service.notify_new_call_offer(chosen_guard, call, distance_km)
+
         return chosen_guard
 
     @classmethod
@@ -267,7 +272,9 @@ class DispatchService:
             conditions.append(Guard.id.notin_(exclude_ids))
 
         result = await db.execute(
-            select(Guard).where(and_(*conditions))
+            select(Guard)
+            .options(selectinload(Guard.devices))
+            .where(and_(*conditions))
         )
         return list(result.scalars().all())
 

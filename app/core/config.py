@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     otp_expire_minutes: int = 5
     otp_length: int = 4
     
+    # Firebase
+    firebase_credentials_path: str = "Safe City Firebase Admin SDK.json"
+    firebase_credentials_json: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         extra = "ignore"

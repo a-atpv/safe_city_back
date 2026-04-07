@@ -8,6 +8,7 @@ from app.core.security import (
     decode_token,
 )
 from app.core.redis import init_redis, close_redis, get_redis
+from app.core.firebase import init_firebase
 
 __all__ = [
     "settings",
@@ -25,4 +26,5 @@ __all__ = [
     "init_redis",
     "close_redis",
     "get_redis",
+    "init_firebase",
 ]

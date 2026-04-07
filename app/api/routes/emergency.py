@@ -11,7 +11,7 @@ from app.schemas import (
     CancelCallRequest,
     APIResponse
 )
-from app.services import EmergencyService
+from app.services.emergency import EmergencyService
 
 router = APIRouter(prefix="/emergency", tags=["Emergency"])
 

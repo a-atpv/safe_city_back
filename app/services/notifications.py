@@ -1,7 +1,8 @@
 from typing import Any, Dict, List, Optional
-from app.api.ws.manager import manager
+# from app.api.ws.manager import manager  # Moved inside methods to avoid circular import
 from app.models import EmergencyCall, Guard, User
 from firebase_admin import messaging
+from app.core.firebase import init_firebase
 import json
 import logging
 
@@ -21,6 +22,9 @@ class NotificationService:
         data: Optional[Dict[str, str]] = None
     ):
         """Helper to send FCM notifications to a list of device tokens."""
+        # Ensure Firebase is initialized
+        init_firebase()
+        
         if not tokens:
             return
 
@@ -67,11 +71,12 @@ class NotificationService:
             payload["guard"] = {
                 "id": call.guard.id,
                 "full_name": call.guard.full_name,
-                "phone": call.guard.phone_number,
-                "image_url": call.guard.image_url,
+                "phone": call.guard.phone,
+                "image_url": call.guard.avatar_url,
             }
 
         # 1. Send via WebSocket
+        from app.api.ws.manager import manager
         await manager.send_to_user(call.user_id, payload)
         logger.info(f"WS: Notification sent to user {call.user_id} for call {call.id}")
 
@@ -109,12 +114,13 @@ class NotificationService:
             "user": {
                 "id": call.user.id,
                 "full_name": call.user.full_name,
-                "phone": call.user.phone_number,
-                "image_url": call.user.image_url,
+                "phone": call.user.phone,
+                "image_url": call.user.avatar_url,
             } if call.user else None
         }
 
         # 1. Send via WebSocket
+        from app.api.ws.manager import manager
         await manager.send_to_guard(guard.id, payload)
         logger.info(f"WS: New call offer notification sent to guard {guard.id}")
 
@@ -143,6 +149,7 @@ class NotificationService:
         }
         
         # 1. Send via WebSocket
+        from app.api.ws.manager import manager
         await manager.send_to_user(user_id, payload)
         
         # 2. Send via FCM (if tokens provided)

@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_redis()
     await connect_db()
+    init_firebase()
     yield
     # Shutdown
     await close_redis()

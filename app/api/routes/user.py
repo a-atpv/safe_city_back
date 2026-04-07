@@ -9,9 +9,10 @@ from app.schemas import (
     UserUpdate, 
     LocationUpdate,
     APIResponse,
-    SubscriptionResponse
+    SubscriptionResponse,
+    DeviceRegister,
 )
-from app.services import UserService
+from app.services.user import UserService, DeviceService
 
 router = APIRouter(prefix="/user", tags=["User"])
 
@@ -63,6 +64,24 @@ async def get_subscription(
             detail="No subscription found"
         )
     return user.subscription
+
+
+@router.post("/device", response_model=APIResponse)
+async def register_device(
+    data: DeviceRegister,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Register or update user's device for push notifications"""
+    await DeviceService.register_device(
+        db=db,
+        user_id=current_user.id,
+        device_token=data.device_token,
+        device_type=data.device_type,
+        device_model=data.device_model,
+        app_version=data.app_version
+    )
+    return APIResponse(success=True, message="Device registered successfully")
 
 
 @router.delete("/me", response_model=APIResponse)

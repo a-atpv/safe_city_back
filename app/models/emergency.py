@@ -5,7 +5,7 @@ from app.core.database import Base
 import enum
 
 
-class CallStatus(enum.StrEnum):
+class CallStatus(str, enum.Enum):
     CREATED = "created"
     SEARCHING = "searching"
     OFFER_SENT = "offer_sent"

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.core import init_redis, close_redis, connect_db, settings
+from app.core import init_redis, close_redis, connect_db, settings, init_firebase
 from app.api import api_router
 
 # Configure logging

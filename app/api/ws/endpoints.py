@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
@@ -8,6 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["WebSockets"])
 
+HEARTBEAT_INTERVAL = 30  # seconds
+
 
 @router.websocket("/user")
 async def websocket_user_endpoint(
@@ -16,14 +19,12 @@ async def websocket_user_endpoint(
 ):
     """
     WebSocket endpoint for users to receive real-time updates about their emergency calls.
-    Usage: ws://host:port/api/v1/ws/user?token=YOUR_JWT_TOKEN
     """
-    # Create a local session for authentication
     from app.core.database import async_session
     async with async_session() as db:
         user = await get_ws_current_user(db, token)
         if not user:
-            await websocket.close(code=1008)  # Policy Violation
+            await websocket.close(code=1008)
             return
 
         await manager.connect_user(user.id, websocket)
@@ -31,10 +32,14 @@ async def websocket_user_endpoint(
         
         try:
             while True:
-                # Keep connection alive and wait for client messages (if any)
-                data = await websocket.receive_text()
-                # Users shouldn't need to send anything for now, but we keep the loop
-                await websocket.send_json({"status": "received", "echo": data})
+                try:
+                    # Wait for a message with a timeout to send heartbeats
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL)
+                    # Handle incoming data if needed
+                    await websocket.send_json({"type": "pong", "data": data})
+                except asyncio.TimeoutError:
+                    # Send a heartbeat ping to keep the connection alive
+                    await websocket.send_json({"type": "ping"})
         except WebSocketDisconnect:
             manager.disconnect_user(user.id, websocket)
             logger.info(f"User {user.id} disconnected from WebSocket")
@@ -50,7 +55,6 @@ async def websocket_guard_endpoint(
 ):
     """
     WebSocket endpoint for guards to receive new call offers and status updates.
-    Usage: ws://host:port/api/v1/ws/guard?token=YOUR_JWT_TOKEN
     """
     from app.core.database import async_session
     async with async_session() as db:
@@ -64,9 +68,12 @@ async def websocket_guard_endpoint(
 
         try:
             while True:
-                data = await websocket.receive_text()
-                # Maybe handle guard location updates via WS in the future
-                await websocket.send_json({"status": "received", "echo": data})
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL)
+                    await websocket.send_json({"type": "pong", "data": data})
+                except asyncio.TimeoutError:
+                    # Heartbeat
+                    await websocket.send_json({"type": "ping"})
         except WebSocketDisconnect:
             manager.disconnect_guard(guard.id, websocket)
             logger.info(f"Guard {guard.id} disconnected from WebSocket")

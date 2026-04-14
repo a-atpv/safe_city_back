@@ -12,14 +12,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+from app.api.ws.manager import manager
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     await init_redis()
     await connect_db()
     init_firebase()
+    await manager.start_listening()
     yield
     # Shutdown
+    await manager.stop_listening()
     await close_redis()
 
 

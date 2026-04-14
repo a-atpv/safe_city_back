@@ -132,6 +132,14 @@ class EmergencyService:
                 call.duration_seconds = int((now - call.created_at).total_seconds())
         elif new_status in [CallStatus.CANCELLED_BY_USER, CallStatus.CANCELLED_BY_SYSTEM]:
             call.cancelled_at = now
+            # If a guard was assigned, free them
+            if call.guard_id:
+                # Use scalar_one_or_none to find the guard and update status
+                # We do this directly to ensure it works even if relationship isn't loaded
+                result = await db.execute(select(Guard).where(Guard.id == call.guard_id))
+                guard = result.scalar_one_or_none()
+                if guard:
+                    guard.is_on_call = False
         
         # Add to history
         history = CallStatusHistory(

@@ -70,7 +70,11 @@ class EmailService:
 async def send_otp_to_email(email: str) -> tuple[bool, Optional[str]]:
     """Generate, store and send OTP to email"""
     otp = OTPService.generate_otp()
-    await OTPService.store_otp(email, otp)
+    stored = await OTPService.store_otp(email, otp)
+    
+    if not stored:
+        logger.error(f"Failed to store OTP for {email} in Redis")
+        return False, None
     
     success = await EmailService.send_otp(email, otp)
     

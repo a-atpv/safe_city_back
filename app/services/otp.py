@@ -57,7 +57,7 @@ class OTPService:
         try:
             redis = get_redis()
             if not redis:
-                logger.error("OTPService: Redis client is not initialized")
+                logger.error("OTPService: Redis client is not initialized during verification")
                 return False
 
             key_id = identifier.strip().lower()
@@ -70,7 +70,7 @@ class OTPService:
             # 2. Check attempts limit first
             attempts = await redis.get(attempts_key)
             if attempts and int(attempts) >= cls.MAX_ATTEMPTS:
-                logger.warning(f"OTPService: Max attempts reached for {key_id}")
+                logger.warning(f"OTPService: Max attempts reached ({attempts}/{cls.MAX_ATTEMPTS}) for {key_id}")
                 return False
             
             # 3. Retrieve stored OTP
@@ -78,8 +78,7 @@ class OTPService:
             
             if not stored_otp:
                 logger.warning(f"OTPService: No OTP found in Redis for {key_id} (expired or never stored)")
-                # We still increment attempts to prevent exhaustive searching if the key doesn't exist?
-                # Actually, if it's not even there, just incrementing attempts_key to track flakiness.
+                # We still increment attempts to prevent brute force even if code is missing from cache
                 await redis.incr(attempts_key)
                 await redis.expire(attempts_key, settings.otp_expire_minutes * 60)
                 return False
@@ -96,7 +95,7 @@ class OTPService:
             new_attempts = await redis.incr(attempts_key)
             await redis.expire(attempts_key, settings.otp_expire_minutes * 60)
             
-            logger.warning(f"OTPService: Invalid OTP attempt {new_attempts}/{cls.MAX_ATTEMPTS} for {key_id}")
+            logger.warning(f"OTPService: OTP mismatch for {key_id}. Expected {stored_otp}, got {clean_otp}. Attempt {new_attempts}/{cls.MAX_ATTEMPTS}")
             return False
             
         except Exception as e:

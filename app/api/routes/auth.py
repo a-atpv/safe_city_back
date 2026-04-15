@@ -39,10 +39,19 @@ async def request_otp(data: EmailRequest):
     success, debug_otp = await send_otp_to_email(email)
     
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send OTP"
-        )
+        # Check if it was a debug case or a real failure
+        if not settings.debug:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP. Please check your email or try again later."
+            )
+        else:
+            # In debug mode, we might still want to return the OTP even if email failed
+            if not debug_otp:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to generate/store OTP"
+                )
     
     response_data = {"email": email}
     if settings.debug and debug_otp:

@@ -1,5 +1,5 @@
-from app.services.email import OTPService as EmailOTPService, EmailService, send_otp_to_email
-from app.services.sms import OTPService, SMSService, send_otp_to_phone
+from app.services.otp import OTPService
+from app.services.email import EmailService, send_otp_to_email
 from app.services.user import UserService, DeviceService
 from app.services.emergency import EmergencyService, SecurityCompanyService
 from app.services.guard import GuardService, GuardShiftService, GuardSettingsService, GuardDeviceService
@@ -9,12 +9,9 @@ from app.services.routing import RoutingService
 from app.services.dispatch import DispatchService
 
 __all__ = [
-    "EmailOTPService",
+    "OTPService",
     "EmailService",
     "send_otp_to_email",
-    "OTPService",
-    "SMSService",
-    "send_otp_to_phone",
     "UserService",
     "DeviceService",
     "EmergencyService",

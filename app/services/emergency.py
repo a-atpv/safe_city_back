@@ -180,11 +180,11 @@ class EmergencyService:
 
     @staticmethod
     async def get_available_calls(db: AsyncSession, limit: int = 20) -> List[EmergencyCall]:
-        """Get all calls currently searching for a guard"""
+        """Get all calls currently searching for a guard (SEARCHING or OFFER_SENT)"""
         result = await db.execute(
             select(EmergencyCall)
             .options(selectinload(EmergencyCall.user))
-            .where(EmergencyCall.status == CallStatus.SEARCHING)
+            .where(EmergencyCall.status.in_([CallStatus.SEARCHING, CallStatus.OFFER_SENT]))
             .order_by(desc(EmergencyCall.created_at))
             .limit(limit)
         )

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -12,6 +12,11 @@ class GuardEmailRequest(BaseModel):
 class GuardVerifyOTPRequest(BaseModel):
     email: EmailStr = Field(..., description="Guard email address")
     code: str = Field(..., min_length=4, max_length=6, description="OTP code")
+
+    @field_validator('code')
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        return v.strip()
 
 
 class GuardTokenResponse(BaseModel):

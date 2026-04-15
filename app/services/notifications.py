@@ -21,7 +21,7 @@ class NotificationService:
         body: str, 
         data: Optional[Dict[str, str]] = None
     ):
-        """Helper to send FCM notifications to a list of device tokens."""
+        """Helper to send FCM notifications to a list of device tokens with high priority."""
         # Ensure Firebase is initialized
         init_firebase()
         
@@ -32,6 +32,25 @@ class NotificationService:
             # FCM data values must be strings
             data = {k: str(v) for k, v in data.items()}
 
+        # Prepare platform-specific configs for high priority delivery
+        android_config = messaging.AndroidConfig(
+            priority="high",
+            notification=messaging.AndroidNotification(
+                sound="default",
+                click_action="FLUTTER_NOTIFICATION_CLICK",
+            )
+        )
+        
+        apns_config = messaging.APNSConfig(
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(
+                    sound="default",
+                    badge=1,
+                    content_available=True,
+                )
+            )
+        )
+
         message = messaging.MulticastMessage(
             notification=messaging.Notification(
                 title=title,
@@ -39,6 +58,8 @@ class NotificationService:
             ),
             data=data,
             tokens=tokens,
+            android=android_config,
+            apns=apns_config,
         )
 
         try:
@@ -48,7 +69,6 @@ class NotificationService:
             if response.failure_count > 0:
                 for idx, resp in enumerate(response.responses):
                     if not resp.success:
-                        # You could handle token cleanup here (e.g. if error is 'registration-token-not-registered')
                         logger.debug(f"FCM: Failed to send to token {tokens[idx]}: {resp.exception}")
         except Exception as e:
             logger.error(f"FCM: Error sending multicast message: {e}")
@@ -99,6 +119,37 @@ class NotificationService:
                     body=body,
                     data={"call_id": str(call.id), "status": call.status.value}
                 )
+
+    async def broadcast_new_emergency(self, guards: List[Guard], call: EmergencyCall):
+        """
+        Broadcast a new emergency call to all available guards.
+        Ensures they all see the call in their "Available Calls" list and get a push.
+        """
+        all_tokens = []
+        for guard in guards:
+            if guard.devices:
+                tokens = [d.device_token for d in guard.devices if d.is_active and d.device_token]
+                all_tokens.extend(tokens)
+        
+        if not all_tokens:
+            logger.info(f"FCM: No active guard tokens found for broadcast of call {call.id}")
+            return
+
+        title = "🚨 Экстренный вызов!"
+        body = f"Внимание! Новый вызов: {call.address or 'Алматы'}. Все доступные охранники, проверьте список вызовов."
+        
+        await self._send_fcm_notification(
+            tokens=list(set(all_tokens)), # Unique tokens
+            title=title,
+            body=body,
+            data={
+                "call_id": str(call.id),
+                "type": "new_emergency_broadcast",
+                "latitude": str(call.latitude),
+                "longitude": str(call.longitude)
+            }
+        )
+        logger.info(f"FCM: Broadcasted emergency call {call.id} to guards.")
 
     async def notify_new_call_offer(self, guard: Guard, call: EmergencyCall, distance_km: float):
         """Notify a guard about a new incoming call offer."""

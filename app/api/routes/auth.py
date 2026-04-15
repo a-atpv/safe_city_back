@@ -9,7 +9,7 @@ from app.schemas import (
     APIResponse
 )
 from app.services.email import send_otp_to_email
-from app.services.sms import OTPService
+from app.services.otp import OTPService
 from app.services.user import UserService
 from app.core.config import settings
 from datetime import timedelta

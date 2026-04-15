@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db, create_access_token, create_refresh_token, decode_token
 from app.schemas.guard import GuardEmailRequest, GuardVerifyOTPRequest, GuardTokenResponse, GuardRefreshTokenRequest
 from app.schemas.common import APIResponse
-from app.services.email import OTPService, send_otp_to_email
+from app.services.email import send_otp_to_email
+from app.services.otp import OTPService
 from app.services.guard import GuardService
 from app.core.config import settings
 from datetime import timedelta

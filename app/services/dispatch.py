@@ -84,6 +84,9 @@ class DispatchService:
         if not candidates:
             return None
 
+        # Broadcast to all candidates that a new emergency is available
+        await notification_service.broadcast_new_emergency(candidates, call)
+
         # Sort by distance to the call location
         candidates_with_dist = []
         for guard in candidates:

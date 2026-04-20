@@ -105,37 +105,46 @@ class ConnectionManager:
         """Publish a message to be sent to a specific user across all workers."""
         redis = get_redis()
         if redis:
-            await redis.publish(self.redis_channel, json.dumps({
-                "target_type": "user",
-                "target_id": user_id,
-                "payload": message
-            }))
-        else:
-            # Fallback to local if redis is not available
-            await self._send_local_user(user_id, message)
+            try:
+                await redis.publish(self.redis_channel, json.dumps({
+                    "target_type": "user",
+                    "target_id": user_id,
+                    "payload": message
+                }))
+                return
+            except Exception as e:
+                logger.warning(f"WebSocket Manager: Redis publish failed ({e}), falling back to local delivery")
+        # Fallback to local if redis is not available or failed
+        await self._send_local_user(user_id, message)
 
     async def send_to_guard(self, guard_id: int, message: Dict[str, Any]):
         """Publish a message to be sent to a specific guard across all workers."""
         redis = get_redis()
         if redis:
-            await redis.publish(self.redis_channel, json.dumps({
-                "target_type": "guard",
-                "target_id": guard_id,
-                "payload": message
-            }))
-        else:
-            await self._send_local_guard(guard_id, message)
+            try:
+                await redis.publish(self.redis_channel, json.dumps({
+                    "target_type": "guard",
+                    "target_id": guard_id,
+                    "payload": message
+                }))
+                return
+            except Exception as e:
+                logger.warning(f"WebSocket Manager: Redis publish failed ({e}), falling back to local delivery")
+        await self._send_local_guard(guard_id, message)
 
     async def broadcast_to_guards(self, message: Dict[str, Any]):
         """Publish a message to be broadcast to all guards across all workers."""
         redis = get_redis()
         if redis:
-            await redis.publish(self.redis_channel, json.dumps({
-                "target_type": "broadcast_guards",
-                "payload": message
-            }))
-        else:
-            await self._broadcast_local_guards(message)
+            try:
+                await redis.publish(self.redis_channel, json.dumps({
+                    "target_type": "broadcast_guards",
+                    "payload": message
+                }))
+                return
+            except Exception as e:
+                logger.warning(f"WebSocket Manager: Redis publish failed ({e}), falling back to local delivery")
+        await self._broadcast_local_guards(message)
 
     # ---------------------------------------------------------
     # Connection Management

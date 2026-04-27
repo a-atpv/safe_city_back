@@ -93,5 +93,10 @@ async def bootstrap_global_admin():
 
 async def run_bootstrap():
     """Run all bootstrap tasks."""
-    await bootstrap_admin()
-    await bootstrap_global_admin()
+    try:
+        await bootstrap_admin()
+        await bootstrap_global_admin()
+    except Exception as e:
+        logger.error(f"Error during bootstrapping: {e}")
+        # We don't re-raise here to allow the app to start even if bootstrap fails
+        # This prevents the app from crashing if tables are missing or db is not ready

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 # from app.api.ws.manager import manager  # Moved inside methods to avoid circular import
 from app.models import EmergencyCall, Guard, User
 from firebase_admin import messaging
@@ -203,6 +203,50 @@ class NotificationService:
                 body=f"Ваш вызов был отменен системой. Причина: {reason}",
                 data={"call_id": str(call_id), "type": "call_cancelled"}
             )
+
+
+    async def send_notification(
+        self, 
+        recipient: Union[User, Guard], 
+        title: str, 
+        body: str, 
+        data: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Send a push notification to a specific user or guard.
+        
+        Args:
+            recipient: The User or Guard model instance.
+            title: Title of the notification.
+            body: Body text of the notification.
+            data: Optional dictionary of extra data strings.
+        """
+        if not recipient or not recipient.fcm_token:
+            logger.warning(f"Notification: No FCM token for recipient {getattr(recipient, 'id', 'unknown')}")
+            return
+
+        # 1. Send via WebSocket if possible
+        from app.api.ws.manager import manager
+        ws_payload = {
+            "type": "general_notification",
+            "title": title,
+            "body": body,
+            "data": data or {}
+        }
+        
+        if isinstance(recipient, User):
+            await manager.send_to_user(recipient.id, ws_payload)
+        elif isinstance(recipient, Guard):
+            await manager.send_to_guard(recipient.id, ws_payload)
+
+        # 2. Send via FCM
+        await self._send_fcm_notification(
+            tokens=[recipient.fcm_token],
+            title=title,
+            body=body,
+            data=data
+        )
+        logger.info(f"Notification: Sent to {recipient.__class__.__name__} {recipient.id}: {title}")
 
 
 notification_service = NotificationService()

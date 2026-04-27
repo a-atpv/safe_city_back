@@ -46,7 +46,7 @@ class EmergencyService:
             select(EmergencyCall)
             .options(
                 selectinload(EmergencyCall.security_company),
-                selectinload(EmergencyCall.user).selectinload(User.devices),
+                selectinload(EmergencyCall.user),
                 selectinload(EmergencyCall.guard)
             )
             .where(EmergencyCall.id == call_id)
@@ -68,7 +68,7 @@ class EmergencyService:
             select(EmergencyCall)
             .options(
                 selectinload(EmergencyCall.security_company),
-                selectinload(EmergencyCall.user).selectinload(User.devices),
+                selectinload(EmergencyCall.user),
                 selectinload(EmergencyCall.guard)
             )
             .where(

@@ -169,6 +169,14 @@ class GuardService:
         await db.refresh(guard)
         return guard
 
+    @staticmethod
+    async def get_all_fcm_tokens(db: AsyncSession) -> List[str]:
+        """Get all unique FCM tokens for guards"""
+        result = await db.execute(
+            select(Guard.fcm_token).where(Guard.fcm_token.isnot(None))
+        )
+        return [str(token) for token in result.scalars().all() if token]
+
 
 class GuardShiftService:
     """Service for guard shift management"""

@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     otp_expire_minutes: int = 5
     otp_length: int = 4
     
+    # Bootstrap
+    bootstrap_admin_email: Optional[str] = None
+    bootstrap_admin_password: Optional[str] = None
+    bootstrap_global_admin_email: Optional[str] = None
+    bootstrap_global_admin_password: Optional[str] = None
+    
     # Firebase
     firebase_credentials_path: str = "Safe City Firebase Admin SDK.json"
     firebase_credentials_json: Optional[str] = None

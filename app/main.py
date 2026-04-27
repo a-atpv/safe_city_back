@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import init_redis, close_redis, connect_db, settings, init_firebase
 from app.api import api_router
-from app.core.bootstrap import bootstrap_admin
+from app.core.bootstrap import run_bootstrap
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     await init_redis()
     await connect_db()
     init_firebase()
-    await bootstrap_admin()
+    await run_bootstrap()
     await manager.start_listening()
     yield
     # Shutdown

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -100,4 +100,10 @@ class UserService:
         await db.refresh(user)
         return user
 
-
+    @staticmethod
+    async def get_all_fcm_tokens(db: AsyncSession) -> List[str]:
+        """Get all unique FCM tokens for users"""
+        result = await db.execute(
+            select(User.fcm_token).where(User.fcm_token.isnot(None))
+        )
+        return [str(token) for token in result.scalars().all() if token]

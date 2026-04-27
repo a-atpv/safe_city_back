@@ -8,6 +8,7 @@ from app.models.messaging import CallMessage, Notification
 from app.models.payment import Payment
 from app.models.settings import UserSettings
 from app.models.faq import FAQCategory, FAQItem
+from app.models.global_admin import GlobalAdmin
 
 __all__ = [
     # User
@@ -41,4 +42,6 @@ __all__ = [
     # FAQ
     "FAQCategory",
     "FAQItem",
+    # Global Admin
+    "GlobalAdmin",
 ]

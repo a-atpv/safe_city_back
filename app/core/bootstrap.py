@@ -2,8 +2,10 @@ import logging
 import os
 from sqlalchemy import select
 from app.core.database import async_session
-from app.models import SecurityCompany, CompanyAdmin
+from app.models import SecurityCompany, CompanyAdmin, GlobalAdmin
 from app.services.admin import CompanyAdminService
+from app.services.global_admin import GlobalAdminService
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -61,3 +63,35 @@ async def bootstrap_admin():
             logger.info(f"Bootstrapping: Admin '{email}' created successfully.")
         else:
             logger.info(f"Bootstrapping: Admin '{email}' already exists.")
+
+
+async def bootstrap_global_admin():
+    """Bootstrap an initial global admin based on environment variables."""
+    email = settings.bootstrap_global_admin_email
+    password = settings.bootstrap_global_admin_password
+
+    if not email or not password:
+        logger.info("Bootstrap global admin not configured. Skipping.")
+        return
+
+    async with async_session() as session:
+        admin = await GlobalAdminService.get_by_email(session, email)
+        if not admin:
+            logger.info(f"Bootstrapping: Creating global admin '{email}'...")
+            await GlobalAdminService.create(
+                session,
+                email=email,
+                password=password,
+                full_name="System Superadmin",
+                role="superadmin"
+            )
+            await session.commit()
+            logger.info(f"Bootstrapping: Global admin '{email}' created successfully.")
+        else:
+            logger.info(f"Bootstrapping: Global admin '{email}' already exists.")
+
+
+async def run_bootstrap():
+    """Run all bootstrap tasks."""
+    await bootstrap_admin()
+    await bootstrap_global_admin()

@@ -247,6 +247,30 @@ class NotificationService:
             data=data
         )
         logger.info(f"Notification: Sent to {recipient.__class__.__name__} {recipient.id}: {title}")
+        
+    async def broadcast_to_all(
+        self, 
+        tokens: List[str], 
+        title: str, 
+        body: str, 
+        data: Optional[Dict[str, Any]] = None
+    ):
+        """Send a notification to all provided tokens, respecting FCM limits."""
+        if not tokens:
+            return
+            
+        # FCM multicast has a limit of 500 tokens per request
+        batch_size = 500
+        for i in range(0, len(tokens), batch_size):
+            batch = tokens[i : i + batch_size]
+            await self._send_fcm_notification(
+                tokens=batch,
+                title=title,
+                body=body,
+                data=data
+            )
+        
+        logger.info(f"Notification: Broadcasted to {len(tokens)} tokens: {title}")
 
 
 notification_service = NotificationService()

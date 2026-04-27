@@ -53,6 +53,8 @@ async def get_available_calls(
     db: AsyncSession = Depends(get_db)
 ):
     """List all calls currently searching for a guard"""
+    if not current_guard.is_online:
+        return []
     calls = await EmergencyService.get_available_calls(db)
     return calls
 

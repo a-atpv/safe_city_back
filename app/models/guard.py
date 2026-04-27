@@ -31,38 +31,19 @@ class Guard(Base):
     total_calls = Column(Integer, default=0)
     completed_calls = Column(Integer, default=0)
 
+    fcm_token = Column(String(500), nullable=True)  # Konsolidirovanniy token dlya push-uvedomleniy
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     security_company = relationship("SecurityCompany", back_populates="guards")
     emergency_calls = relationship("EmergencyCall", back_populates="guard")
-    devices = relationship("GuardDevice", back_populates="guard", cascade="all, delete-orphan")
     shifts = relationship("GuardShift", back_populates="guard", cascade="all, delete-orphan")
     settings = relationship("GuardSettings", back_populates="guard", uselist=False, cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="guard")
     reports = relationship("CallReport", back_populates="guard")
     notifications = relationship("Notification", back_populates="guard")
-
-
-class GuardDevice(Base):
-    __tablename__ = "guard_devices"
-
-    id = Column(Integer, primary_key=True, index=True)
-    guard_id = Column(Integer, ForeignKey("guards.id"), nullable=False)
-
-    device_token = Column(String(500), nullable=True)  # FCM token
-    device_type = Column(String(20), nullable=True)  # ios, android
-    device_model = Column(String(100), nullable=True)
-    app_version = Column(String(20), nullable=True)
-
-    is_active = Column(Boolean, default=True)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-    # Relationships
-    guard = relationship("Guard", back_populates="devices")
 
 
 class GuardShift(Base):

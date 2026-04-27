@@ -276,7 +276,6 @@ class DispatchService:
 
         result = await db.execute(
             select(Guard)
-            .options(selectinload(Guard.devices))
             .where(and_(*conditions))
         )
         return list(result.scalars().all())

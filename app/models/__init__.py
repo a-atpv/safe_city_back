@@ -1,7 +1,7 @@
 from app.models.user import User, Subscription, UserDevice, UserStatus, UserRole, SubscriptionStatus
 from app.models.emergency import EmergencyCall, CallStatusHistory, CallStatus
 from app.models.security_company import SecurityCompany
-from app.models.guard import Guard, GuardDevice, GuardShift, GuardSettings
+from app.models.guard import Guard, GuardShift, GuardSettings
 from app.models.company_admin import CompanyAdmin
 from app.models.review import Review, CallReport
 from app.models.messaging import CallMessage, Notification
@@ -25,7 +25,6 @@ __all__ = [
     "SecurityCompany",
     # Guard
     "Guard",
-    "GuardDevice",
     "GuardShift",
     "GuardSettings",
     # Company Admin

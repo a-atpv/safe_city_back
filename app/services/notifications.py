@@ -125,11 +125,7 @@ class NotificationService:
         Broadcast a new emergency call to all available guards.
         Ensures they all see the call in their "Available Calls" list and get a push.
         """
-        all_tokens = []
-        for guard in guards:
-            if guard.devices:
-                tokens = [d.device_token for d in guard.devices if d.is_active and d.device_token]
-                all_tokens.extend(tokens)
+        all_tokens = [guard.fcm_token for guard in guards if guard.fcm_token]
         
         if not all_tokens:
             logger.info(f"FCM: No active guard tokens found for broadcast of call {call.id}")
@@ -176,20 +172,18 @@ class NotificationService:
         logger.info(f"WS: New call offer notification sent to guard {guard.id}")
 
         # 2. Send via FCM
-        if guard.devices:
-            tokens = [d.device_token for d in guard.devices if d.is_active and d.device_token]
-            if tokens:
-                await self._send_fcm_notification(
-                    tokens=tokens,
-                    title="Новый вызов!",
-                    body=f"Нужна ваша помощь! Расстояние: {round(distance_km, 1)} км",
-                    data={
-                        "call_id": str(call.id),
-                        "type": "call_offer",
-                        "latitude": str(call.latitude),
-                        "longitude": str(call.longitude)
-                    }
-                )
+        if guard.fcm_token:
+            await self._send_fcm_notification(
+                tokens=[guard.fcm_token],
+                title="Новый вызов!",
+                body=f"Нужна ваша помощь! Расстояние: {round(distance_km, 1)} км",
+                data={
+                    "call_id": str(call.id),
+                    "type": "call_offer",
+                    "latitude": str(call.latitude),
+                    "longitude": str(call.longitude)
+                }
+            )
 
     async def notify_call_cancelled(self, user_id: int, call_id: int, reason: str, tokens: List[str] = None):
         """Notify user that their call has been cancelled by the system."""

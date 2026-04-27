@@ -19,7 +19,6 @@ from app.services.guard import (
     GuardService,
     GuardShiftService,
     GuardSettingsService,
-    GuardDeviceService,
 )
 
 router = APIRouter(prefix="/guard", tags=["Guard"])
@@ -160,13 +159,8 @@ async def register_device(
     db: AsyncSession = Depends(get_db)
 ):
     """Register guard device for push notifications"""
-    await GuardDeviceService.register_device(
-        db,
-        guard_id=current_guard.id,
-        device_token=data.device_token,
-        device_type=data.device_type,
-        device_model=data.device_model,
-        app_version=data.app_version,
+    await GuardService.update_fcm_token(
+        db, current_guard, data.device_token
     )
     return APIResponse(success=True, message="Device registered")
 
@@ -178,12 +172,12 @@ async def unregister_device(
     db: AsyncSession = Depends(get_db)
 ):
     """Unregister guard device"""
-    success = await GuardDeviceService.unregister_device(
-        db, current_guard.id, token
+    # Simply clear the token if it matches
+    if current_guard.fcm_token == token:
+        await GuardService.update_fcm_token(db, current_guard, None)
+        return APIResponse(success=True, message="Device unregistered")
+    
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Device not found"
     )
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Device not found"
-        )
-    return APIResponse(success=True, message="Device unregistered")

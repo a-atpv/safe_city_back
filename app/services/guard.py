@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, desc, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.models import Guard, GuardDevice, GuardShift, GuardSettings
+from app.models import Guard, GuardShift, GuardSettings
 
 
 class GuardService:
@@ -157,6 +157,18 @@ class GuardService:
         await db.flush()
         return guard
 
+    @staticmethod
+    async def update_fcm_token(
+        db: AsyncSession,
+        guard: Guard,
+        fcm_token: Optional[str]
+    ) -> Guard:
+        """Update guard's FCM token for push notifications"""
+        guard.fcm_token = fcm_token
+        await db.flush()
+        await db.refresh(guard)
+        return guard
+
 
 class GuardShiftService:
     """Service for guard shift management"""
@@ -234,64 +246,3 @@ class GuardSettingsService:
         await db.flush()
         await db.refresh(settings)
         return settings
-
-
-class GuardDeviceService:
-    """Service for guard device management"""
-
-    @staticmethod
-    async def register_device(
-        db: AsyncSession,
-        guard_id: int,
-        device_token: str,
-        device_type: str,
-        device_model: Optional[str] = None,
-        app_version: Optional[str] = None
-    ) -> GuardDevice:
-        """Register or update guard device"""
-        result = await db.execute(
-            select(GuardDevice).where(
-                GuardDevice.guard_id == guard_id,
-                GuardDevice.device_token == device_token
-            )
-        )
-        device = result.scalar_one_or_none()
-
-        if device:
-            device.device_type = device_type
-            device.device_model = device_model
-            device.app_version = app_version
-            device.is_active = True
-        else:
-            device = GuardDevice(
-                guard_id=guard_id,
-                device_token=device_token,
-                device_type=device_type,
-                device_model=device_model,
-                app_version=app_version,
-            )
-            db.add(device)
-
-        await db.flush()
-        await db.refresh(device)
-        return device
-
-    @staticmethod
-    async def unregister_device(
-        db: AsyncSession,
-        guard_id: int,
-        device_token: str
-    ) -> bool:
-        """Unregister device"""
-        result = await db.execute(
-            select(GuardDevice).where(
-                GuardDevice.guard_id == guard_id,
-                GuardDevice.device_token == device_token
-            )
-        )
-        device = result.scalar_one_or_none()
-        if device:
-            device.is_active = False
-            await db.flush()
-            return True
-        return False

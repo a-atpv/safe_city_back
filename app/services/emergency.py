@@ -185,7 +185,10 @@ class EmergencyService:
         """Get all calls currently searching for a guard (SEARCHING or OFFER_SENT)"""
         result = await db.execute(
             select(EmergencyCall)
-            .options(selectinload(EmergencyCall.user))
+            .options(
+                selectinload(EmergencyCall.user),
+                selectinload(EmergencyCall.security_company)
+            )
             .where(EmergencyCall.status.in_([CallStatus.SEARCHING, CallStatus.OFFER_SENT]))
             .order_by(desc(EmergencyCall.created_at))
             .limit(limit)

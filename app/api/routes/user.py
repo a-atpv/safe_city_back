@@ -12,7 +12,7 @@ from app.schemas import (
     SubscriptionResponse,
     DeviceRegister,
 )
-from app.services.user import UserService, DeviceService
+from app.services.user import UserService
 
 router = APIRouter(prefix="/user", tags=["User"])
 
@@ -73,13 +73,8 @@ async def register_device(
     db: AsyncSession = Depends(get_db)
 ):
     """Register or update user's device for push notifications"""
-    await DeviceService.register_device(
-        db=db,
-        user_id=current_user.id,
-        device_token=data.device_token,
-        device_type=data.device_type,
-        device_model=data.device_model,
-        app_version=data.app_version
+    await UserService.update_fcm_token(
+        db, current_user, data.device_token
     )
     return APIResponse(success=True, message="Device registered successfully")
 

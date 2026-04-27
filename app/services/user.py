@@ -2,7 +2,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.models import User, Subscription, UserDevice, SubscriptionStatus
+from app.models import User, Subscription, SubscriptionStatus
 from app.schemas import UserCreate, UserUpdate
 
 
@@ -88,44 +88,16 @@ class UserService:
         await db.delete(user)
         return True
 
-
-class DeviceService:
-    """Service for user devices management"""
-    
     @staticmethod
-    async def register_device(
+    async def update_fcm_token(
         db: AsyncSession,
-        user_id: int,
-        device_token: str,
-        device_type: str,
-        device_model: Optional[str] = None,
-        app_version: Optional[str] = None
-    ) -> UserDevice:
-        """Register or update user device"""
-        # Check if device exists
-        result = await db.execute(
-            select(UserDevice).where(
-                UserDevice.user_id == user_id,
-                UserDevice.device_token == device_token
-            )
-        )
-        device = result.scalar_one_or_none()
-        
-        if device:
-            device.device_type = device_type
-            device.device_model = device_model
-            device.app_version = app_version
-            device.is_active = True
-        else:
-            device = UserDevice(
-                user_id=user_id,
-                device_token=device_token,
-                device_type=device_type,
-                device_model=device_model,
-                app_version=app_version
-            )
-            db.add(device)
-        
+        user: User,
+        fcm_token: Optional[str]
+    ) -> User:
+        """Update user's FCM token for push notifications"""
+        user.fcm_token = fcm_token
         await db.flush()
-        await db.refresh(device)
-        return device
+        await db.refresh(user)
+        return user
+
+

@@ -78,7 +78,7 @@ from app.schemas.routing import (
     CallRouteResponse,
     ETAResponse,
 )
-from app.schemas.device import DeviceRegister, DeviceResponse
+from app.schemas.device import DeviceRegister
 
 __all__ = [
     # User auth
@@ -160,5 +160,4 @@ __all__ = [
     "CallRouteResponse",
     "ETAResponse",
     "DeviceRegister",
-    "DeviceResponse",
 ]

@@ -101,24 +101,22 @@ class NotificationService:
         logger.info(f"WS: Notification sent to user {call.user_id} for call {call.id}")
 
         # 2. Send via FCM
-        if call.user and call.user.devices:
-            tokens = [d.device_token for d in call.user.devices if d.is_active and d.device_token]
-            if tokens:
-                status_texts = {
-                    "OFFER_SENT": "Поиск ближайшего охранника...",
-                    "ACCEPTED": "Охранник принял вызов и выехал к вам.",
-                    "ARRIVED": "Охранник прибыл на место.",
-                    "COMPLETED": "Вызов успешно завершен.",
-                    "CANCELLED": "Ваш вызов был отменен.",
-                }
-                body = status_texts.get(call.status.value, f"Статус вызова обновлен: {call.status.value}")
-                
-                await self._send_fcm_notification(
-                    tokens=tokens,
-                    title="Обновление статуса вызова",
-                    body=body,
-                    data={"call_id": str(call.id), "status": call.status.value}
-                )
+        if call.user and call.user.fcm_token:
+            status_texts = {
+                "OFFER_SENT": "Поиск ближайшего охранника...",
+                "ACCEPTED": "Охранник принял вызов и выехал к вам.",
+                "ARRIVED": "Охранник прибыл на место.",
+                "COMPLETED": "Вызов успешно завершен.",
+                "CANCELLED": "Ваш вызов был отменен.",
+            }
+            body = status_texts.get(call.status.value, f"Статус вызова обновлен: {call.status.value}")
+            
+            await self._send_fcm_notification(
+                tokens=[call.user.fcm_token],
+                title="Обновление статуса вызова",
+                body=body,
+                data={"call_id": str(call.id), "status": call.status.value}
+            )
 
     async def broadcast_new_emergency(self, guards: List[Guard], call: EmergencyCall):
         """

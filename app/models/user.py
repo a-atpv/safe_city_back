@@ -42,6 +42,9 @@ class User(Base):
     last_longitude = Column(Float, nullable=True)
     last_location_update = Column(DateTime(timezone=True), nullable=True)
     
+    # Push notifications
+    fcm_token = Column(String(500), nullable=True)
+    
     # Profile extras
     city = Column(String(100), nullable=True)
     language = Column(String(5), default="ru")  # ru, kk, en
@@ -52,7 +55,6 @@ class User(Base):
     # Relationships
     subscription = relationship("Subscription", back_populates="user", uselist=False)
     emergency_calls = relationship("EmergencyCall", back_populates="user")
-    devices = relationship("UserDevice", back_populates="user")
     settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user")
     reviews = relationship("Review", back_populates="user")
@@ -85,21 +87,3 @@ class Subscription(Base):
     payments = relationship("Payment", back_populates="subscription")
 
 
-class UserDevice(Base):
-    __tablename__ = "user_devices"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
-    device_token = Column(String(500), nullable=True)  # FCM token
-    device_type = Column(String(20), nullable=True)  # ios, android
-    device_model = Column(String(100), nullable=True)
-    app_version = Column(String(20), nullable=True)
-    
-    is_active = Column(Boolean, default=True)
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Relationships
-    user = relationship("User", back_populates="devices")

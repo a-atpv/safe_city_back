@@ -1,4 +1,4 @@
-from app.models.user import User, Subscription, UserDevice, UserStatus, UserRole, SubscriptionStatus
+from app.models.user import User, Subscription, UserStatus, UserRole, SubscriptionStatus
 from app.models.emergency import EmergencyCall, CallStatusHistory, CallStatus
 from app.models.security_company import SecurityCompany
 from app.models.guard import Guard, GuardShift, GuardSettings
@@ -13,7 +13,6 @@ __all__ = [
     # User
     "User",
     "Subscription",
-    "UserDevice",
     "UserStatus",
     "UserRole",
     "SubscriptionStatus",

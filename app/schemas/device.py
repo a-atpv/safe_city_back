@@ -10,11 +10,3 @@ class DeviceRegister(BaseModel):
     app_version: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class DeviceResponse(DeviceRegister):
-    """Schema for device response."""
-    id: int
-    is_active: bool
-
-    model_config = ConfigDict(from_attributes=True)

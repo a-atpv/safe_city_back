@@ -1,6 +1,6 @@
 from app.services.otp import OTPService
 from app.services.email import EmailService, send_otp_to_email
-from app.services.user import UserService, DeviceService
+from app.services.user import UserService
 from app.services.emergency import EmergencyService, SecurityCompanyService
 from app.services.guard import GuardService, GuardShiftService, GuardSettingsService
 from app.services.admin import CompanyAdminService
@@ -14,7 +14,6 @@ __all__ = [
     "EmailService",
     "send_otp_to_email",
     "UserService",
-    "DeviceService",
     "EmergencyService",
     "SecurityCompanyService",
     "GuardService",

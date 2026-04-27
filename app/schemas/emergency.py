@@ -3,8 +3,7 @@ from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from app.models.emergency import CallStatus
 
-if TYPE_CHECKING:
-    from app.schemas.guard import GuardBrief
+from app.schemas.guard import GuardBrief
 
 
 class EmergencyCallCreate(BaseModel):

@@ -8,6 +8,9 @@ from app.schemas.emergency import EmergencyCallResponse, EmergencyCallBrief, Cal
 from app.schemas.extras import CallReportCreate, CallReportResponse, CallMessageCreate, CallMessageResponse, CallMessagesListResponse
 from app.schemas.common import APIResponse
 from app.services.emergency import EmergencyService
+from sqlalchemy import select, desc
+from sqlalchemy.orm import selectinload
+from app.models import Guard, CallStatus, EmergencyCall, CallReport, CallMessage
 
 router = APIRouter(prefix="/guard", tags=["Guard Calls"])
 
@@ -18,9 +21,6 @@ async def get_active_call(
     db: AsyncSession = Depends(get_db)
 ):
     """Get guard's current active call"""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from app.models import EmergencyCall
 
     active_statuses = [
         CallStatus.ACCEPTED,
@@ -205,7 +205,6 @@ async def submit_report(
         raise HTTPException(status_code=400, detail="Call must be completed first")
 
     # Check if report already exists
-    from sqlalchemy import select
     existing = await db.execute(
         select(CallReport).where(CallReport.call_id == call_id)
     )
@@ -232,7 +231,6 @@ async def send_message(
     db: AsyncSession = Depends(get_db)
 ):
     """Send chat message during active call"""
-    from app.models import CallMessage
 
     call = await EmergencyService.get_by_id(db, call_id)
     if not call or call.guard_id != current_guard.id:
@@ -261,8 +259,6 @@ async def get_messages(
     db: AsyncSession = Depends(get_db)
 ):
     """Get chat messages for a call"""
-    from sqlalchemy import select
-    from app.models import CallMessage
 
     call = await EmergencyService.get_by_id(db, call_id)
     if not call or call.guard_id != current_guard.id:
@@ -286,8 +282,6 @@ async def get_guard_call_history(
     db: AsyncSession = Depends(get_db)
 ):
     """Get guard's call history"""
-    from sqlalchemy import select, desc
-    from app.models import EmergencyCall
 
     query = select(EmergencyCall).where(EmergencyCall.guard_id == current_guard.id)
 

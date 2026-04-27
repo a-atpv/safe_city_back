@@ -31,6 +31,7 @@ async def get_active_call(
         select(EmergencyCall)
         .options(selectinload(EmergencyCall.security_company))
         .options(selectinload(EmergencyCall.user))
+        .options(selectinload(EmergencyCall.guard))
         .where(
             EmergencyCall.guard_id == current_guard.id,
             EmergencyCall.status.in_(active_statuses)
@@ -304,7 +305,12 @@ async def get_guard_call_history(
     total = len(count_result.all())
 
     result = await db.execute(
-        query.order_by(desc(EmergencyCall.created_at))
+        query.options(
+            selectinload(EmergencyCall.user),
+            selectinload(EmergencyCall.security_company),
+            selectinload(EmergencyCall.guard)
+        )
+        .order_by(desc(EmergencyCall.created_at))
         .offset(offset)
         .limit(limit)
     )

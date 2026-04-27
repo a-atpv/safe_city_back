@@ -1,7 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from app.models.emergency import CallStatus
+
+if TYPE_CHECKING:
+    from app.schemas.guard import GuardBrief
 
 
 class EmergencyCallCreate(BaseModel):
@@ -34,6 +37,7 @@ class EmergencyCallResponse(BaseModel):
     
     security_company: Optional["SecurityCompanyBrief"] = None
     user: Optional[UserBrief] = None
+    guard: Optional["GuardBrief"] = None
     
     class Config:
         from_attributes = True
@@ -45,6 +49,10 @@ class EmergencyCallBrief(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[int] = None
+    
+    user: Optional[UserBrief] = None
+    guard: Optional["GuardBrief"] = None
+    security_company: Optional["SecurityCompanyBrief"] = None
 
     class Config:
         from_attributes = True
@@ -84,3 +92,4 @@ class CallStatusUpdate(BaseModel):
 
 # Update forward refs
 EmergencyCallResponse.model_rebuild()
+EmergencyCallBrief.model_rebuild()

@@ -176,7 +176,11 @@ async def list_calls(
             pass
 
     result = await db.execute(
-        query.options(selectinload(EmergencyCall.guard))
+        query.options(
+            selectinload(EmergencyCall.guard),
+            selectinload(EmergencyCall.user),
+            selectinload(EmergencyCall.security_company)
+        )
         .order_by(desc(EmergencyCall.created_at))
         .offset(offset).limit(limit)
     )
@@ -209,7 +213,11 @@ async def get_active_calls(
     ]
     result = await db.execute(
         select(EmergencyCall)
-        .options(selectinload(EmergencyCall.guard))
+        .options(
+            selectinload(EmergencyCall.guard),
+            selectinload(EmergencyCall.user),
+            selectinload(EmergencyCall.security_company)
+        )
         .where(
             EmergencyCall.security_company_id == current_admin.security_company_id,
             EmergencyCall.status.in_(active_statuses)

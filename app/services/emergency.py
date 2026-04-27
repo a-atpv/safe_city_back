@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime, timezone
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models import EmergencyCall, CallStatusHistory, CallStatus, SecurityCompany, User, Guard
@@ -203,7 +203,6 @@ class EmergencyService:
     @staticmethod
     async def has_active_calls(db: AsyncSession, guard_id: int) -> bool:
         """Check if guard has any active calls (ACCEPTED, EN_ROUTE, ARRIVED)"""
-        from sqlalchemy import func as sa_func
         active_statuses = [
             CallStatus.ACCEPTED,
             CallStatus.EN_ROUTE,

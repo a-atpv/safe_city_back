@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, update, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
 from app.api.deps import get_current_active_user
@@ -146,7 +146,6 @@ async def get_notifications(
     notifications = result.scalars().all()
 
     # Unread count
-    from sqlalchemy import func as sa_func
     unread_result = await db.execute(
         select(sa_func.count(Notification.id)).where(
             Notification.user_id == current_user.id,
@@ -198,7 +197,6 @@ async def mark_all_read(
     db: AsyncSession = Depends(get_db)
 ):
     """Mark all notifications as read"""
-    from sqlalchemy import update
     await db.execute(
         update(Notification)
         .where(Notification.user_id == current_user.id, Notification.is_read == False)
@@ -226,7 +224,6 @@ async def get_payment_history(
     )
     payments = result.scalars().all()
 
-    from sqlalchemy import func as sa_func
     total_result = await db.execute(
         select(sa_func.count(Payment.id)).where(Payment.user_id == current_user.id)
     )

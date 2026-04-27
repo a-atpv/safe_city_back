@@ -20,6 +20,7 @@ from app.services.guard import (
     GuardShiftService,
     GuardSettingsService,
 )
+from app.services.emergency import EmergencyService
 
 router = APIRouter(prefix="/guard", tags=["Guard"])
 
@@ -106,7 +107,6 @@ async def end_shift(
             detail="Already offline"
         )
     if current_guard.is_on_call:
-        from app.services.emergency import EmergencyService
         # Double check if there's REALLY an active call
         has_active = await EmergencyService.has_active_calls(db, current_guard.id)
         if not has_active:

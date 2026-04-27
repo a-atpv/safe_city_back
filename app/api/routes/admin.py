@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, desc, func as sa_func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
 from app.api.deps import get_current_admin, require_admin_owner
-from app.models import CompanyAdmin
+from app.models import CompanyAdmin, Guard, EmergencyCall, CallStatus, Review, User
 from app.schemas.guard import GuardCreate, GuardAdminUpdate, GuardResponse, GuardListResponse
 from app.schemas.admin import (
     AdminResponse,
@@ -16,6 +17,7 @@ from app.schemas.admin import (
 from app.schemas.common import APIResponse
 from app.services.guard import GuardService
 from app.services.admin import CompanyAdminService
+from app.services.notifications import notification_service
 
 router = APIRouter(prefix="/admin", tags=["Admin Panel"])
 
@@ -161,9 +163,6 @@ async def list_calls(
     db: AsyncSession = Depends(get_db)
 ):
     """List all calls for the company"""
-    from sqlalchemy import select, desc
-    from sqlalchemy.orm import selectinload
-    from app.models import EmergencyCall, CallStatus
 
     query = select(EmergencyCall).where(
         EmergencyCall.security_company_id == current_admin.security_company_id
@@ -203,9 +202,6 @@ async def get_active_calls(
     db: AsyncSession = Depends(get_db)
 ):
     """Get currently active calls"""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from app.models import EmergencyCall, CallStatus
 
     active_statuses = [
         CallStatus.CREATED, CallStatus.SEARCHING, CallStatus.OFFER_SENT,
@@ -235,8 +231,6 @@ async def get_analytics_overview(
     db: AsyncSession = Depends(get_db)
 ):
     """Get dashboard analytics overview"""
-    from sqlalchemy import select, func as sa_func
-    from app.models import Guard, EmergencyCall, CallStatus
 
     company_id = current_admin.security_company_id
 
@@ -272,7 +266,6 @@ async def get_analytics_overview(
     active_calls = active_result.scalar()
 
     # Average rating
-    from app.models import Review
     rating_result = await db.execute(
         select(sa_func.avg(Guard.rating)).where(
             Guard.security_company_id == company_id,
@@ -361,8 +354,6 @@ async def send_admin_notification(
     db: AsyncSession = Depends(get_db)
 ):
     """Send a custom notification to a user or guard"""
-    from app.services.notifications import notification_service
-    from app.models import User, Guard
 
     recipient = None
     if data.recipient_type == "user":

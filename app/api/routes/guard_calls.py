@@ -23,7 +23,6 @@ async def get_active_call(
     from app.models import EmergencyCall
 
     active_statuses = [
-        CallStatus.OFFER_SENT,
         CallStatus.ACCEPTED,
         CallStatus.EN_ROUTE,
         CallStatus.ARRIVED,

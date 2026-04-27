@@ -18,11 +18,17 @@ from app.api.ws.manager import manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await init_redis()
-    await connect_db()
-    init_firebase()
-    await run_bootstrap()
-    await manager.start_listening()
+    try:
+        await init_redis()
+        await connect_db()
+        init_firebase()
+        await run_bootstrap()
+        await manager.start_listening()
+    except Exception as e:
+        logger.error(f"Critical error during startup: {e}")
+        logger.error(traceback.format_exc())
+        # We allow the app to start even if some services fail, 
+        # as they have their own retry logic (e.g. Redis listener).
     yield
     # Shutdown
     await manager.stop_listening()

@@ -27,25 +27,25 @@ async def websocket_user_endpoint(
             await websocket.close(code=1008)
             return
 
-        await manager.connect_user(user.id, websocket)
-        logger.info(f"User {user.id} connected to WebSocket")
-        
-        try:
-            while True:
-                try:
-                    # Wait for a message with a timeout to send heartbeats
-                    data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL)
-                    # Handle incoming data if needed
-                    await websocket.send_json({"type": "pong", "data": data})
-                except asyncio.TimeoutError:
-                    # Send a heartbeat ping to keep the connection alive
-                    await websocket.send_json({"type": "ping"})
-        except WebSocketDisconnect:
-            manager.disconnect_user(user.id, websocket)
-            logger.info(f"User {user.id} disconnected from WebSocket")
-        except Exception as e:
-            manager.disconnect_user(user.id, websocket)
-            logger.error(f"WebSocket error for user {user.id}: {e}")
+    await manager.connect_user(user.id, websocket)
+    logger.info(f"User {user.id} connected to WebSocket")
+    
+    try:
+        while True:
+            try:
+                # Wait for a message with a timeout to send heartbeats
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL)
+                # Handle incoming data if needed
+                await websocket.send_json({"type": "pong", "data": data})
+            except asyncio.TimeoutError:
+                # Send a heartbeat ping to keep the connection alive
+                await websocket.send_json({"type": "ping"})
+    except WebSocketDisconnect:
+        manager.disconnect_user(user.id, websocket)
+        logger.info(f"User {user.id} disconnected from WebSocket")
+    except Exception as e:
+        manager.disconnect_user(user.id, websocket)
+        logger.error(f"WebSocket error for user {user.id}: {e}")
 
 
 @router.websocket("/guard")
@@ -63,20 +63,20 @@ async def websocket_guard_endpoint(
             await websocket.close(code=1008)
             return
 
-        await manager.connect_guard(guard.id, websocket)
-        logger.info(f"Guard {guard.id} connected to WebSocket")
+    await manager.connect_guard(guard.id, websocket)
+    logger.info(f"Guard {guard.id} connected to WebSocket")
 
-        try:
-            while True:
-                try:
-                    data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL)
-                    await websocket.send_json({"type": "pong", "data": data})
-                except asyncio.TimeoutError:
-                    # Heartbeat
-                    await websocket.send_json({"type": "ping"})
-        except WebSocketDisconnect:
-            manager.disconnect_guard(guard.id, websocket)
-            logger.info(f"Guard {guard.id} disconnected from WebSocket")
-        except Exception as e:
-            manager.disconnect_guard(guard.id, websocket)
-            logger.error(f"WebSocket error for guard {guard.id}: {e}")
+    try:
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=HEARTBEAT_INTERVAL)
+                await websocket.send_json({"type": "pong", "data": data})
+            except asyncio.TimeoutError:
+                # Heartbeat
+                await websocket.send_json({"type": "ping"})
+    except WebSocketDisconnect:
+        manager.disconnect_guard(guard.id, websocket)
+        logger.info(f"Guard {guard.id} disconnected from WebSocket")
+    except Exception as e:
+        manager.disconnect_guard(guard.id, websocket)
+        logger.error(f"WebSocket error for guard {guard.id}: {e}")

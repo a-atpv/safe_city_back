@@ -38,36 +38,43 @@ class ConnectionManager:
 
     async def _listen_to_redis(self):
         """Background loop to forward Redis messages to local connections."""
-        redis = get_redis()
-        # Wait until redis is initialized if called early
-        while redis is None:
-            await asyncio.sleep(1)
-            redis = get_redis()
+        while True:
+            try:
+                redis = get_redis()
+                # Wait until redis is initialized if called early
+                while redis is None:
+                    await asyncio.sleep(1)
+                    redis = get_redis()
 
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(self.redis_channel)
-        
-        try:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    data = json.loads(message["data"])
-                    target_type = data.get("target_type")
-                    target_id = data.get("target_id")
-                    payload = data.get("payload")
+                pubsub = redis.pubsub()
+                await pubsub.subscribe(self.redis_channel)
+                
+                logger.info(f"WebSocket Manager: Subscribed to Redis channel '{self.redis_channel}'")
 
-                    if target_type == "user":
-                        await self._send_local_user(target_id, payload)
-                    elif target_type == "guard":
-                        await self._send_local_guard(target_id, payload)
-                    elif target_type == "broadcast_guards":
-                        await self._broadcast_local_guards(payload)
-                    elif target_type == "broadcast_all":
-                        await self._broadcast_local_all(payload)
-        except Exception as e:
-            logger.error(f"WebSocket Manager: Error in Redis listener loop: {e}")
-            # Re-subscribe on error after a short delay
-            await asyncio.sleep(5)
-            await self.start_listening()
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        try:
+                            data = json.loads(message["data"])
+                            target_type = data.get("target_type")
+                            target_id = data.get("target_id")
+                            payload = data.get("payload")
+
+                            if target_type == "user":
+                                await self._send_local_user(target_id, payload)
+                            elif target_type == "guard":
+                                await self._send_local_guard(target_id, payload)
+                            elif target_type == "broadcast_guards":
+                                await self._broadcast_local_guards(payload)
+                            elif target_type == "broadcast_all":
+                                await self._broadcast_local_all(payload)
+                        except json.JSONDecodeError:
+                            logger.error(f"WebSocket Manager: Failed to decode Redis message: {message['data']}")
+                        except Exception as e:
+                            logger.error(f"WebSocket Manager: Error processing message: {e}")
+            except Exception as e:
+                logger.error(f"WebSocket Manager: Error in Redis listener loop: {e}")
+                # Wait before retrying to avoid tight loop on persistent errors
+                await asyncio.sleep(5)
 
     # ---------------------------------------------------------
     # Local Send Methods (Direct to connected clients in THIS process)

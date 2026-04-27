@@ -9,6 +9,7 @@ Handles:
 """
 
 import json
+import logging
 from typing import Optional, List
 from math import radians, cos, sin, asin, sqrt
 from sqlalchemy import select, and_
@@ -22,6 +23,9 @@ from app.models import (
 )
 from sqlalchemy.orm import selectinload
 from app.services.notifications import notification_service
+
+
+logger = logging.getLogger(__name__)
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

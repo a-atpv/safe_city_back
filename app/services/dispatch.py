@@ -81,6 +81,8 @@ class DispatchService:
             exclude_ids=exclude_ids,
         )
 
+        logger.info(f"Dispatch: Found {len(candidates)} candidate guards for call {call.id}")
+
         if not candidates:
             return None
 
@@ -97,6 +99,10 @@ class DispatchService:
                 )
                 if dist <= cls.MAX_SEARCH_RADIUS_KM:
                     candidates_with_dist.append((guard, dist))
+                else:
+                    logger.debug(f"Dispatch: Guard {guard.id} too far ({dist:.1f}km)")
+
+        logger.info(f"Dispatch: {len(candidates_with_dist)} candidates within {cls.MAX_SEARCH_RADIUS_KM}km radius")
 
         if not candidates_with_dist:
             return None

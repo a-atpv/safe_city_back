@@ -63,7 +63,7 @@ class NotificationService:
         )
 
         try:
-            response = messaging.send_multicast(message)
+            response = messaging.send_each_for_multicast(message)
             logger.info(f"FCM: Successfully sent {response.success_count} messages; {response.failure_count} failed.")
             
             if response.failure_count > 0:

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
 from app.api.deps import get_current_admin, require_admin_owner
@@ -10,6 +11,7 @@ from app.schemas.admin import (
     CompanyResponse,
     CompanyUpdate,
     AnalyticsOverview,
+    NotificationSendRequest,
 )
 from app.schemas.common import APIResponse
 from app.services.guard import GuardService
@@ -340,3 +342,49 @@ async def remove_admin(
 
     await CompanyAdminService.delete(db, admin)
     return APIResponse(success=True, message="Admin removed")
+
+
+# ============ Notification Management ============
+
+@router.post("/notifications/send", response_model=APIResponse)
+async def send_admin_notification(
+    data: NotificationSendRequest,
+    current_admin: CompanyAdmin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Send a custom notification to a user or guard"""
+    from app.services.notifications import notification_service
+    from app.models import User, Guard
+
+    recipient = None
+    if data.recipient_type == "user":
+        result = await db.execute(select(User).where(User.id == data.recipient_id))
+        recipient = result.scalar_one_or_none()
+    elif data.recipient_type == "guard":
+        result = await db.execute(select(Guard).where(Guard.id == data.recipient_id))
+        recipient = result.scalar_one_or_none()
+        # Ensure guard belongs to the same company
+        if recipient and recipient.security_company_id != current_admin.security_company_id:
+            raise HTTPException(status_code=403, detail="Not authorized to send notifications to this guard")
+    
+    if not recipient:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"{data.recipient_type.capitalize()} with ID {data.recipient_id} not found"
+        )
+    
+    if not recipient.fcm_token:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Target {data.recipient_type} does not have a registered device token"
+        )
+    
+    await notification_service.send_notification(
+        recipient=recipient,
+        title=data.title,
+        body=data.body,
+        data=data.data
+    )
+    
+    return APIResponse(success=True, message="Notification sent successfully")
+

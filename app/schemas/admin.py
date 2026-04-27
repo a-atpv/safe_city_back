@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 
@@ -120,3 +120,14 @@ class GuardPerformance(BaseModel):
     completed_calls: int
     rating: float
     total_reviews: int
+
+
+# ============ Notification Schemas ============
+
+class NotificationSendRequest(BaseModel):
+    recipient_type: str = Field(..., pattern="^(user|guard)$", description="Target type: 'user' or 'guard'")
+    recipient_id: int = Field(..., description="The ID of the user or guard")
+    title: str = Field(..., min_length=1, max_length=100)
+    body: str = Field(..., min_length=1, max_length=500)
+    data: Optional[Dict[str, str]] = None
+

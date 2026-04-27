@@ -107,10 +107,18 @@ async def end_shift(
             detail="Already offline"
         )
     if current_guard.is_on_call:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot go offline while on a call"
-        )
+        from app.services.emergency import EmergencyService
+        # Double check if there's REALLY an active call
+        has_active = await EmergencyService.has_active_calls(db, current_guard.id)
+        if not has_active:
+            # Self-heal: the flag was out of sync
+            current_guard.is_on_call = False
+            await db.flush()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot go offline while on a call"
+            )
     await GuardShiftService.end_shift(db, current_guard)
     return APIResponse(success=True, message="Shift ended")
 

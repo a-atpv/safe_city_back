@@ -126,12 +126,14 @@ class EmergencyService:
             call.en_route_at = now
         elif new_status == CallStatus.ARRIVED:
             call.arrived_at = now
-        elif new_status == CallStatus.COMPLETED:
-            call.completed_at = now
-            if call.created_at:
-                call.duration_seconds = int((now - call.created_at).total_seconds())
-        elif new_status in [CallStatus.CANCELLED_BY_USER, CallStatus.CANCELLED_BY_SYSTEM]:
-            call.cancelled_at = now
+        elif new_status in [CallStatus.COMPLETED, CallStatus.CANCELLED_BY_USER, CallStatus.CANCELLED_BY_SYSTEM]:
+            if new_status == CallStatus.COMPLETED:
+                call.completed_at = now
+                if call.created_at:
+                    call.duration_seconds = int((now - call.created_at).total_seconds())
+            else:
+                call.cancelled_at = now
+            
             # If a guard was assigned, free them
             if call.guard_id:
                 # Use scalar_one_or_none to find the guard and update status
@@ -189,6 +191,24 @@ class EmergencyService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def has_active_calls(db: AsyncSession, guard_id: int) -> bool:
+        """Check if guard has any active calls (ACCEPTED, EN_ROUTE, ARRIVED)"""
+        from sqlalchemy import func as sa_func
+        active_statuses = [
+            CallStatus.ACCEPTED,
+            CallStatus.EN_ROUTE,
+            CallStatus.ARRIVED,
+        ]
+        result = await db.execute(
+            select(sa_func.count(EmergencyCall.id)).where(
+                EmergencyCall.guard_id == guard_id,
+                EmergencyCall.status.in_(active_statuses)
+            )
+        )
+        count = result.scalar()
+        return count > 0
 
 
 class SecurityCompanyService:

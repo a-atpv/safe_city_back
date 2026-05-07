@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy import select, desc, func as sa_func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from app.schemas.common import APIResponse
 from app.services.guard import GuardService
 from app.services.admin import CompanyAdminService
 from app.services.notifications import notification_service
+from app.services.s3 import s3_service
 
 router = APIRouter(prefix="/admin", tags=["Admin Panel"])
 
@@ -49,6 +50,46 @@ async def update_company(
     await db.flush()
     await db.refresh(company)
     return company
+
+
+@router.post("/company/logo", response_model=CompanyResponse)
+async def upload_company_logo(
+    file: UploadFile = File(...),
+    current_admin: CompanyAdmin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload or replace company logo"""
+    admin = await CompanyAdminService.get_with_company(db, current_admin.id)
+    company = admin.security_company
+
+    # Delete old logo if exists
+    if company.logo_url:
+        await s3_service.delete_file(company.logo_url)
+
+    # Upload new logo
+    url = await s3_service.upload_file(file, "logos/companies")
+    company.logo_url = url
+    await db.flush()
+    await db.refresh(company)
+    return company
+
+
+@router.delete("/company/logo", response_model=APIResponse)
+async def delete_company_logo(
+    current_admin: CompanyAdmin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete company logo"""
+    admin = await CompanyAdminService.get_with_company(db, current_admin.id)
+    company = admin.security_company
+
+    if not company.logo_url:
+        raise HTTPException(status_code=404, detail="No logo to delete")
+
+    await s3_service.delete_file(company.logo_url)
+    company.logo_url = None
+    await db.flush()
+    return APIResponse(success=True, message="Logo deleted")
 
 
 # ============ Guard Management ============

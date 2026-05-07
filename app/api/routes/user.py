@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
 from app.api.deps import get_current_active_user
@@ -13,6 +13,7 @@ from app.schemas import (
     DeviceRegister,
 )
 from app.services.user import UserService
+from app.services.s3 import s3_service
 
 router = APIRouter(prefix="/user", tags=["User"])
 
@@ -36,6 +37,40 @@ async def update_current_user(
     """Update current user profile"""
     user = await UserService.update(db, current_user, data)
     return user
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_user_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload or replace user avatar photo"""
+    # Delete old avatar if exists
+    if current_user.avatar_url:
+        await s3_service.delete_file(current_user.avatar_url)
+
+    # Upload new avatar
+    url = await s3_service.upload_file(file, "avatars/users")
+    current_user.avatar_url = url
+    await db.flush()
+    await db.refresh(current_user)
+    return current_user
+
+
+@router.delete("/me/avatar", response_model=APIResponse)
+async def delete_user_avatar(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete user avatar photo"""
+    if not current_user.avatar_url:
+        raise HTTPException(status_code=404, detail="No avatar to delete")
+
+    await s3_service.delete_file(current_user.avatar_url)
+    current_user.avatar_url = None
+    await db.flush()
+    return APIResponse(success=True, message="Avatar deleted")
 
 
 @router.post("/location", response_model=APIResponse)
@@ -85,5 +120,9 @@ async def delete_account(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete user account"""
+    # Clean up avatar from S3 before deleting account
+    if current_user.avatar_url:
+        await s3_service.delete_file(current_user.avatar_url)
     await UserService.delete(db, current_user)
     return APIResponse(success=True, message="Account deleted successfully")
+

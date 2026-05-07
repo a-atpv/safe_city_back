@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
 from app.api.deps import get_current_guard
@@ -21,6 +21,7 @@ from app.services.guard import (
     GuardSettingsService,
 )
 from app.services.emergency import EmergencyService
+from app.services.s3 import s3_service
 
 router = APIRouter(prefix="/guard", tags=["Guard"])
 
@@ -51,6 +52,40 @@ async def update_guard_profile(
     update_data = data.model_dump(exclude_unset=True)
     guard = await GuardService.update(db, current_guard, update_data)
     return guard
+
+
+@router.post("/me/avatar", response_model=GuardResponse)
+async def upload_guard_avatar(
+    file: UploadFile = File(...),
+    current_guard: Guard = Depends(get_current_guard),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload or replace guard avatar photo"""
+    # Delete old avatar if exists
+    if current_guard.avatar_url:
+        await s3_service.delete_file(current_guard.avatar_url)
+
+    # Upload new avatar
+    url = await s3_service.upload_file(file, "avatars/guards")
+    current_guard.avatar_url = url
+    await db.flush()
+    await db.refresh(current_guard)
+    return current_guard
+
+
+@router.delete("/me/avatar", response_model=APIResponse)
+async def delete_guard_avatar(
+    current_guard: Guard = Depends(get_current_guard),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete guard avatar photo"""
+    if not current_guard.avatar_url:
+        raise HTTPException(status_code=404, detail="No avatar to delete")
+
+    await s3_service.delete_file(current_guard.avatar_url)
+    current_guard.avatar_url = None
+    await db.flush()
+    return APIResponse(success=True, message="Avatar deleted")
 
 
 # ============ Settings ============

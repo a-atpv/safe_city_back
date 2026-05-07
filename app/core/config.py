@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     firebase_credentials_path: str = "Safe City Firebase Admin SDK.json"
     firebase_credentials_json: Optional[str] = None
     
+    # AWS S3
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_region: str = "eu-north-1"
+    aws_bucket_name: str = "safe-sity"
+    
     class Config:
         env_file = ".env"
         extra = "ignore"

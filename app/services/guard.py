@@ -77,12 +77,41 @@ class GuardService:
         db: AsyncSession,
         guard: Guard,
         latitude: float,
-        longitude: float
+        longitude: float,
+        accuracy: Optional[float] = None
     ) -> Guard:
         """Update guard's real-time location"""
-        guard.current_latitude = latitude
-        guard.current_longitude = longitude
-        guard.last_location_update = datetime.now(timezone.utc)
+        import logging
+        logger = logging.getLogger(__name__)
+
+        now = datetime.now(timezone.utc)
+
+        # Smooth jumps (anomaly detection)
+        if guard.current_latitude and guard.current_longitude and guard.last_location_update:
+            time_diff_hours = (now - guard.last_location_update).total_seconds() / 3600.0
+            if time_diff_hours > 0:
+                from app.services.routing import _haversine_km
+                dist_km = _haversine_km(
+                    guard.current_latitude, guard.current_longitude,
+                    latitude, longitude
+                )
+                speed_kmh = dist_km / time_diff_hours
+                
+                # If speed > 200 km/h, consider it an anomaly and reject
+                if speed_kmh > 200.0:
+                    logger.warning(f"Anomaly detected for guard {guard.id}: speed {speed_kmh:.1f} km/h. Ignoring location.")
+                    return guard
+
+        # Always update last activity time to keep guard "online"
+        guard.last_location_update = now
+
+        # Only update coordinates if accuracy is acceptable (e.g. <= 500m)
+        if accuracy is None or accuracy <= 500:
+            guard.current_latitude = latitude
+            guard.current_longitude = longitude
+        else:
+            logger.debug(f"Guard {guard.id} location accuracy ({accuracy}m) is too low. Skipping coordinate update.")
+
         await db.flush()
         return guard
 

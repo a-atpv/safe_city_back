@@ -41,6 +41,8 @@ class RouteResult:
     distance_text: str
     # Turn-by-turn steps (optional, only if requested)
     steps: List[RouteStep] = field(default_factory=list)
+    # Flag indicating if this is a fallback straight-line route
+    is_fallback_route: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +243,7 @@ class RoutingService:
             eta_minutes=eta_minutes,
             distance_text=_format_distance(road_dist_m),
             steps=[],
+            is_fallback_route=True,
         )
 
     # ------------------------------------------------------------------

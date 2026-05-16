@@ -57,11 +57,20 @@ async def get_route_to_call(
             detail="Call not found"
         )
 
+    from datetime import datetime, timezone
+
     # Guard must have a known location
-    if not current_guard.current_latitude or not current_guard.current_longitude:
+    if not current_guard.current_latitude or not current_guard.current_longitude or not current_guard.last_location_update:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Guard location unknown. Send location update first."
+            detail="MISSING_GUARD_LOCATION"
+        )
+        
+    time_diff = datetime.now(timezone.utc) - current_guard.last_location_update
+    if time_diff.total_seconds() > 600: # 10 minutes
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="STALE_GUARD_LOCATION"
         )
 
     # Build route
@@ -82,6 +91,7 @@ async def get_route_to_call(
             duration_seconds=route_result.duration_seconds,
             eta_minutes=route_result.eta_minutes,
             distance_text=route_result.distance_text,
+            is_fallback_route=route_result.is_fallback_route,
             steps=[
                 RouteStepResponse(
                     instruction=s.instruction,

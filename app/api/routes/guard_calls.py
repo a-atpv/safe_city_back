@@ -36,6 +36,7 @@ async def get_active_call(
             EmergencyCall.guard_id == current_guard.id,
             EmergencyCall.status.in_(active_statuses)
         )
+        .order_by(desc(EmergencyCall.created_at))
         .limit(1)
     )
     call = result.scalar_one_or_none()
@@ -43,6 +44,22 @@ async def get_active_call(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No active call found"
+        )
+    return call
+
+
+@router.get("/call/{call_id}", response_model=EmergencyCallResponse)
+async def get_call(
+    call_id: int,
+    current_guard: Guard = Depends(get_current_guard),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get full details of a specific call (e.g. for history)"""
+    call = await EmergencyService.get_by_id(db, call_id)
+    if not call or call.guard_id != current_guard.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found"
         )
     return call
 
@@ -75,6 +92,13 @@ async def accept_call(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Call cannot be accepted in current state"
+        )
+
+    # Check if guard already has an active call
+    if current_guard.is_on_call:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You already have an active call"
         )
 
     # Verify guard belongs to assigned company

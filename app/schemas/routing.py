@@ -38,6 +38,9 @@ class RouteResponse(BaseModel):
 
     # Optional turn-by-turn
     steps: List[RouteStepResponse] = []
+    
+    # Flag indicating if this is a fallback straight-line route
+    is_fallback_route: bool = False
 
 
 class CallRouteResponse(BaseModel):

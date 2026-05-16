@@ -85,6 +85,7 @@ class SubscriptionResponse(BaseModel):
 class LocationUpdate(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
+    accuracy: Optional[float] = Field(None, description="Location accuracy in meters")
 
 
 # Update forward refs

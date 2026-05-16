@@ -180,7 +180,7 @@ async def update_location(
 ):
     """Update guard's real-time location"""
     await GuardService.update_location(
-        db, current_guard, data.latitude, data.longitude
+        db, current_guard, data.latitude, data.longitude, data.accuracy
     )
     return APIResponse(success=True, message="Location updated")
 

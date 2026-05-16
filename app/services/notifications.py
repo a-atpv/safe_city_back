@@ -145,6 +145,28 @@ class NotificationService:
         )
         logger.info(f"FCM: Broadcasted emergency call {call.id} to guards.")
 
+    async def notify_guard_call_updated(self, call: EmergencyCall):
+        """Notify a guard that their active call has been updated (e.g. address changed)."""
+        if not call.guard_id:
+            return
+
+        payload = {
+            "type": "call_updated", # Using type as we do in other events, but sending event/call to match frontend
+            "event": "call_updated",
+            "call": {
+                "id": call.id,
+                "status": call.status.value if hasattr(call.status, 'value') else str(call.status),
+                "latitude": call.latitude,
+                "longitude": call.longitude,
+                "address": call.address,
+            }
+        }
+
+        # Send via WebSocket
+        from app.api.ws.manager import manager
+        await manager.send_to_guard(call.guard_id, payload)
+        logger.info(f"WS: Call updated notification sent to guard {call.guard_id} for call {call.id}")
+
     async def notify_new_call_offer(self, guard: Guard, call: EmergencyCall, distance_km: float):
         """Notify a guard about a new incoming call offer."""
         payload = {

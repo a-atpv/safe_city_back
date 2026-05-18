@@ -61,12 +61,54 @@ class UserService:
         latitude: float, 
         longitude: float
     ) -> User:
-        """Update user's last known location"""
+        """Update user's last known location and broadcast to assigned guard if active call exists."""
+        import logging
         from datetime import datetime, timezone
+        from sqlalchemy import select, desc
+        from app.models import EmergencyCall, CallStatus
+
+        logger = logging.getLogger(__name__)
+
         user.last_latitude = latitude
         user.last_longitude = longitude
         user.last_location_update = datetime.now(timezone.utc)
         await db.flush()
+
+        # ── Broadcast location to guard if there is an active call ──
+        try:
+            active_statuses = [
+                CallStatus.ACCEPTED,
+                CallStatus.EN_ROUTE,
+                CallStatus.ARRIVED,
+            ]
+            result = await db.execute(
+                select(EmergencyCall)
+                .where(
+                    EmergencyCall.user_id == user.id,
+                    EmergencyCall.status.in_(active_statuses),
+                    EmergencyCall.guard_id.isnot(None),
+                )
+                .order_by(desc(EmergencyCall.created_at))
+                .limit(1)
+            )
+            active_call = result.scalar_one_or_none()
+
+            if active_call and active_call.guard_id:
+                from app.api.ws.manager import manager
+                await manager.send_to_guard(active_call.guard_id, {
+                    "type": "user_location_update",
+                    "call_id": active_call.id,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                })
+                logger.debug(
+                    f"WS: Sent user location ({latitude}, {longitude}) "
+                    f"to guard {active_call.guard_id} for call {active_call.id}"
+                )
+        except Exception as e:
+            # Never fail the location update because of a WS error
+            logger.warning(f"WS: Failed to broadcast user location to guard: {e}")
+
         return user
     
     @staticmethod

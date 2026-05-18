@@ -6,11 +6,11 @@ from sqlalchemy import select
 # Add current directory to path
 sys.path.append(os.getcwd())
 
-from app.core.database import SessionLocal
+from app.core.database import async_session
 from app.models import Guard
 
 async def main():
-    async with SessionLocal() as db:
+    async with async_session() as db:
         try:
             result = await db.execute(select(Guard))
             guards = result.scalars().all()

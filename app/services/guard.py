@@ -113,6 +113,43 @@ class GuardService:
             logger.debug(f"Guard {guard.id} location accuracy ({accuracy}m) is too low. Skipping coordinate update.")
 
         await db.flush()
+
+        # ── Broadcast guard location to the user of the active call ──
+        try:
+            from sqlalchemy import select, desc
+            from app.models import EmergencyCall, CallStatus
+            active_statuses = [
+                CallStatus.ACCEPTED,
+                CallStatus.EN_ROUTE,
+                CallStatus.ARRIVED,
+            ]
+            result = await db.execute(
+                select(EmergencyCall)
+                .where(
+                    EmergencyCall.guard_id == guard.id,
+                    EmergencyCall.status.in_(active_statuses),
+                )
+                .order_by(desc(EmergencyCall.created_at))
+                .limit(1)
+            )
+            active_call = result.scalar_one_or_none()
+
+            if active_call and active_call.user_id:
+                from app.api.ws.manager import manager
+                await manager.send_to_user(active_call.user_id, {
+                    "type": "guard_location_update",
+                    "call_id": active_call.id,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                })
+                logger.debug(
+                    f"WS: Sent guard location ({latitude}, {longitude}) "
+                    f"to user {active_call.user_id} for call {active_call.id}"
+                )
+        except Exception as e:
+            # Never fail the location update because of a WS error
+            logger.warning(f"WS: Failed to broadcast guard location to user: {e}")
+
         return guard
 
     @staticmethod

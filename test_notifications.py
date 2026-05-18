@@ -11,7 +11,7 @@ async def main():
     service = NotificationService()
 
     # Mocking dependencies to avoid real network calls
-    with patch("firebase_admin.messaging.send_multicast") as mock_fcm, \
+    with patch("firebase_admin.messaging.send_each_for_multicast") as mock_fcm, \
          patch("app.api.ws.manager.manager.send_to_user") as mock_ws_user, \
          patch("app.api.ws.manager.manager.send_to_guard") as mock_ws_guard:
         

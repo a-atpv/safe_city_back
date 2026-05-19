@@ -120,6 +120,8 @@ async def get_route_to_call(
         guard_rating=current_guard.rating,
         guard_total_reviews=current_guard.total_reviews,
         guard_phone=current_guard.phone,
+        user_name=call.user.full_name if call.user else None,
+        user_phone=call.user.phone if call.user else None,
     )
 
 

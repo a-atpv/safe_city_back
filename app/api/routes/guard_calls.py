@@ -196,8 +196,17 @@ async def complete_call(
     if not call or call.guard_id != current_guard.id:
         raise HTTPException(status_code=404, detail="Call not found")
 
-    if call.status != CallStatus.ARRIVED:
+    if call.status not in [CallStatus.ACCEPTED, CallStatus.EN_ROUTE, CallStatus.ARRIVED]:
         raise HTTPException(status_code=400, detail="Invalid status transition")
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    # Automatically set intermediate timestamps if they were skipped on the frontend
+    if not call.en_route_at:
+        call.en_route_at = call.accepted_at or now
+    if not call.arrived_at:
+        call.arrived_at = now
 
     # Calculate response time
     if call.created_at and call.arrived_at:

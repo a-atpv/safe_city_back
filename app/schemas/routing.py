@@ -69,6 +69,8 @@ class CallRouteResponse(BaseModel):
     guard_rating: Optional[float] = None
     guard_total_reviews: Optional[int] = None
     guard_phone: Optional[str] = None
+    user_name: Optional[str] = None
+    user_phone: Optional[str] = None
 
 
 class ETAResponse(BaseModel):

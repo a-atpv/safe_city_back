@@ -74,7 +74,7 @@ class NotificationService:
             logger.error(f"FCM: Error sending multicast message: {e}")
 
     async def notify_call_status_update(self, call: EmergencyCall):
-        """Notify the user about a change in their call's status."""
+        """Notify the user and guard about a change in their call's status."""
         if not call.user_id:
             return
 
@@ -95,12 +95,12 @@ class NotificationService:
                 "image_url": call.guard.avatar_url,
             }
 
-        # 1. Send via WebSocket
+        # 1. Send via WebSocket to User
         from app.api.ws.manager import manager
         await manager.send_to_user(call.user_id, payload)
         logger.info(f"WS: Notification sent to user {call.user_id} for call {call.id}")
 
-        # 2. Send via FCM
+        # 2. Send via FCM to User
         if call.user and call.user.fcm_token:
             status_texts = {
                 "OFFER_SENT": "Поиск ближайшего охранника...",
@@ -108,6 +108,8 @@ class NotificationService:
                 "ARRIVED": "Охранник прибыл на место.",
                 "COMPLETED": "Вызов успешно завершен.",
                 "CANCELLED": "Ваш вызов был отменен.",
+                "CANCELLED_BY_USER": "Вызов отменен вами.",
+                "CANCELLED_BY_SYSTEM": "Ваш вызов был отменен системой.",
             }
             body = status_texts.get(call.status.value, f"Статус вызова обновлен: {call.status.value}")
             
@@ -117,6 +119,46 @@ class NotificationService:
                 body=body,
                 data={"call_id": str(call.id), "status": call.status.value}
             )
+
+        # 3. Send to GUARD via WebSocket & FCM (if assigned)
+        if call.guard_id:
+            guard_payload = {
+                "type": "call_status_update",
+                "call_id": call.id,
+                "status": call.status.value,
+                "user_id": call.user_id,
+            }
+            if call.user:
+                guard_payload["user"] = {
+                    "id": call.user.id,
+                    "full_name": call.user.full_name,
+                    "phone": call.user.phone,
+                    "image_url": call.user.avatar_url,
+                }
+
+            # Send via WebSocket to Guard
+            await manager.send_to_guard(call.guard_id, guard_payload)
+            logger.info(f"WS: Notification sent to guard {call.guard_id} for call {call.id}")
+
+            # Send via FCM to Guard for terminal states
+            if call.guard and call.guard.fcm_token:
+                guard_status_texts = {
+                    "COMPLETED": "Вызов успешно завершен.",
+                    "CANCELLED_BY_USER": "Пользователь отменил вызов.",
+                    "CANCELLED_BY_SYSTEM": "Вызов был отменен системой.",
+                }
+                if call.status.value in guard_status_texts:
+                    body = guard_status_texts[call.status.value]
+                    await self._send_fcm_notification(
+                        tokens=[call.guard.fcm_token],
+                        title="Вызов завершен/отменен",
+                        body=body,
+                        data={
+                            "call_id": str(call.id),
+                            "status": call.status.value,
+                            "type": "call_status_update"
+                        }
+                    )
 
     async def broadcast_new_emergency(self, guards: List[Guard], call: EmergencyCall):
         """

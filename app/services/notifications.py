@@ -172,7 +172,7 @@ class NotificationService:
             return
 
         title = "🚨 Экстренный вызов!"
-        body = f"Внимание! Новый вызов: {call.address or 'Алматы'}. Все доступные охранники, проверьте список вызовов."
+        body = f"Внимание! Новый вызов: {call.address or 'неизвестный адрес'}. Все доступные охранники, проверьте список вызовов."
         
         await self._send_fcm_notification(
             tokens=list(set(all_tokens)), # Unique tokens

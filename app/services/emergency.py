@@ -18,11 +18,22 @@ class EmergencyService:
         data: EmergencyCallCreate
     ) -> EmergencyCall:
         """Create new emergency call"""
+        address = data.address
+        if not address:
+            from app.services.geocoding import OpenStreetMapService
+            import logging
+            logger = logging.getLogger(__name__)
+            try:
+                address = await OpenStreetMapService.get_address_for_call(data.latitude, data.longitude)
+            except Exception as e:
+                logger.error(f"Failed to reverse geocode SOS coordinates: {e}")
+                address = f"{data.latitude:.6f}, {data.longitude:.6f}"
+
         call = EmergencyCall(
             user_id=user_id,
             latitude=data.latitude,
             longitude=data.longitude,
-            address=data.address,
+            address=address,
             status=CallStatus.CREATED
         )
         db.add(call)

@@ -108,6 +108,18 @@ async def cancel_call(
             detail="Call cannot be cancelled"
         )
     
+    # Validate secret phrase
+    if not current_user.secret_phrase:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Secret phrase is not set for your profile. Please configure a secret phrase first."
+        )
+    if data.secret_phrase.strip() != current_user.secret_phrase:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid secret phrase"
+        )
+    
     call = await EmergencyService.cancel_call(db, call, data.reason)
     return call
 

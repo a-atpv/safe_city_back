@@ -10,6 +10,8 @@ from app.schemas.user import (
     UserWithSubscription,
     SubscriptionResponse,
     LocationUpdate,
+    SecretPhraseRequest,
+    SecretPhraseResponse,
 )
 from app.schemas.emergency import (
     EmergencyCallCreate,
@@ -94,6 +96,8 @@ __all__ = [
     "UserWithSubscription",
     "SubscriptionResponse",
     "LocationUpdate",
+    "SecretPhraseRequest",
+    "SecretPhraseResponse",
     # Emergency
     "EmergencyCallCreate",
     "EmergencyCallResponse",

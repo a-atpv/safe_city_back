@@ -11,6 +11,8 @@ from app.schemas import (
     APIResponse,
     SubscriptionResponse,
     DeviceRegister,
+    SecretPhraseRequest,
+    SecretPhraseResponse,
 )
 from app.services.user import UserService
 from app.services.s3 import s3_service
@@ -112,6 +114,39 @@ async def register_device(
         db, current_user, data.device_token
     )
     return APIResponse(success=True, message="Device registered successfully")
+
+
+@router.get("/me/secret-phrase", response_model=SecretPhraseResponse)
+async def get_secret_phrase(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current user's secret phrase for emergency call cancellation"""
+    return SecretPhraseResponse(secret_phrase=current_user.secret_phrase)
+
+
+@router.post("/me/secret-phrase", response_model=SecretPhraseResponse)
+async def create_secret_phrase(
+    data: SecretPhraseRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create/set current user's secret phrase for emergency call cancellation"""
+    current_user.secret_phrase = data.secret_phrase.strip()
+    await db.flush()
+    return SecretPhraseResponse(secret_phrase=current_user.secret_phrase)
+
+
+@router.put("/me/secret-phrase", response_model=SecretPhraseResponse)
+async def update_secret_phrase(
+    data: SecretPhraseRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Edit/update current user's secret phrase for emergency call cancellation"""
+    current_user.secret_phrase = data.secret_phrase.strip()
+    await db.flush()
+    return SecretPhraseResponse(secret_phrase=current_user.secret_phrase)
 
 
 @router.delete("/me", response_model=APIResponse)

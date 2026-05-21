@@ -64,6 +64,7 @@ class CallHistoryResponse(BaseModel):
 
 class CancelCallRequest(BaseModel):
     reason: Optional[str] = None
+    secret_phrase: str = Field(..., min_length=1, description="Secret phrase required to cancel the call")
 
 
 # ============ Security Company ============

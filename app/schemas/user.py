@@ -91,5 +91,15 @@ class LocationUpdate(BaseModel):
     accuracy: Optional[float] = Field(None, description="Location accuracy in meters")
 
 
+# ============ Secret Phrase Schemas ============
+
+class SecretPhraseRequest(BaseModel):
+    secret_phrase: str = Field(..., min_length=1, max_length=255, description="Secret phrase for emergency call cancellation")
+
+
+class SecretPhraseResponse(BaseModel):
+    secret_phrase: Optional[str] = Field(None, description="Secret phrase for emergency call cancellation")
+
+
 # Update forward refs
 UserWithSubscription.model_rebuild()

@@ -36,6 +36,7 @@ class User(Base):
     status = Column(Enum(UserStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]), default=UserStatus.ACTIVE)
     role = Column(Enum(UserRole, native_enum=False, values_callable=lambda x: [e.value for e in x]), default=UserRole.USER)
     is_verified = Column(Boolean, default=False)
+    is_new = Column(Boolean, default=True, nullable=False)
     
     # Location (last known)
     last_latitude = Column(Float, nullable=True)

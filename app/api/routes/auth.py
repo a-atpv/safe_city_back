@@ -83,8 +83,12 @@ async def verify_otp(
     
     # Get or create user
     user = await UserService.get_by_email(db, email)
+    is_new_user = False
     if not user:
         user = await UserService.create(db, email)
+        is_new_user = True
+    else:
+        is_new_user = user.is_new
     
     # Generate tokens
     access_token = create_access_token(
@@ -97,7 +101,8 @@ async def verify_otp(
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=settings.access_token_expire_minutes * 60,
-        role=user.role
+        role=user.role,
+        isNew=is_new_user
     )
 
 
@@ -134,5 +139,8 @@ async def refresh_token(
     return TokenResponse(
         access_token=access_token,
         refresh_token=new_refresh_token,
-        expires_in=settings.access_token_expire_minutes * 60
+        expires_in=settings.access_token_expire_minutes * 60,
+        role=user.role,
+        isNew=user.is_new
     )
+

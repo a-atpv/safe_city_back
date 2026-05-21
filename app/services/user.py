@@ -38,7 +38,7 @@ class UserService:
     @staticmethod
     async def create(db: AsyncSession, email: str) -> User:
         """Create new user"""
-        user = User(email=email.lower(), is_verified=True)
+        user = User(email=email.lower(), is_verified=True, is_new=True)
         db.add(user)
         await db.flush()
         await db.refresh(user)
@@ -50,6 +50,11 @@ class UserService:
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(user, field, value)
+        
+        # If user updates full_name or phone, they are no longer "new"
+        if "full_name" in update_data or "phone" in update_data:
+            user.is_new = False
+            
         await db.flush()
         await db.refresh(user)
         return user

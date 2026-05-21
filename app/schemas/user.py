@@ -25,6 +25,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     role: str = "user"
+    isNew: bool
 
 
 class RefreshTokenRequest(BaseModel):
@@ -47,6 +48,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    is_new: Optional[bool] = None
 
 
 class UserResponse(BaseModel):
@@ -57,6 +59,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_verified: bool
+    is_new: bool
     created_at: datetime
 
     class Config:

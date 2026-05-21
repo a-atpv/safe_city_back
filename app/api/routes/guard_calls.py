@@ -87,6 +87,11 @@ async def accept_call(
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
 
+    # If already accepted by this guard, return it (idempotency / handle double tap)
+    if call.guard_id == current_guard.id:
+        if call.status in [CallStatus.ACCEPTED, CallStatus.EN_ROUTE, CallStatus.ARRIVED]:
+            return call
+
     # Verify call is in acceptable state
     if call.status not in [CallStatus.SEARCHING, CallStatus.OFFER_SENT]:
         raise HTTPException(
@@ -94,12 +99,18 @@ async def accept_call(
             detail="Call cannot be accepted in current state"
         )
 
-    # Check if guard already has an active call
+    # Check if guard already has an active call, with self-healing check
     if current_guard.is_on_call:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already have an active call"
-        )
+        has_active = await EmergencyService.has_active_calls(db, current_guard.id)
+        if not has_active:
+            # Self-heal out-of-sync state
+            current_guard.is_on_call = False
+            await db.flush()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You already have an active call"
+            )
 
     # Verify guard belongs to assigned company
     if call.security_company_id and call.security_company_id != current_guard.security_company_id:

@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     is_verified: bool
     is_new: bool
+    secret_phrase: Optional[str] = None
     created_at: datetime
 
     class Config:

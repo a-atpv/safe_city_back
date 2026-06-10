@@ -147,8 +147,9 @@ class NotificationService:
                     "CANCELLED_BY_USER": "Пользователь отменил вызов.",
                     "CANCELLED_BY_SYSTEM": "Вызов был отменен системой.",
                 }
-                if call.status.value in guard_status_texts:
-                    body = guard_status_texts[call.status.value]
+                status_upper = call.status.value.upper()
+                if status_upper in guard_status_texts:
+                    body = guard_status_texts[status_upper]
                     await self._send_fcm_notification(
                         tokens=[call.guard.fcm_token],
                         title="Вызов завершен/отменен",

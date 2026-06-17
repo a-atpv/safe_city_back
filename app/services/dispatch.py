@@ -90,9 +90,6 @@ class DispatchService:
         if not candidates:
             return None
 
-        # Broadcast to all candidates that a new emergency is available
-        await notification_service.broadcast_new_emergency(candidates, call)
-
         # Sort by distance to the call location
         candidates_with_dist = []
         for guard in candidates:
@@ -164,6 +161,12 @@ class DispatchService:
 
         # Notify the guard via WebSockets and FCM
         await notification_service.notify_new_call_offer(chosen_guard, call, distance_km)
+
+        # Schedule a background broadcast to other guards if this guard doesn't accept within 1 minute
+        import asyncio
+        asyncio.create_task(
+            cls._schedule_broadcast_after_delay(call.id, chosen_guard.id, delay=60.0)
+        )
 
         return chosen_guard
 
@@ -316,3 +319,63 @@ class DispatchService:
                 continue
 
         return declined_ids
+
+    @classmethod
+    async def _schedule_broadcast_after_delay(
+        cls,
+        call_id: int,
+        initial_guard_id: int,
+        delay: float = 60.0
+    ):
+        """
+        Wait for `delay` seconds, then check if the call is still not accepted.
+        If it's not accepted, broadcast the emergency to other available guards.
+        """
+        import asyncio
+        from app.core.database import async_session
+        from app.services.notifications import notification_service
+        from sqlalchemy import select
+
+        await asyncio.sleep(delay)
+
+        try:
+            async with async_session() as db:
+                result = await db.execute(
+                    select(EmergencyCall)
+                    .options(
+                        selectinload(EmergencyCall.security_company),
+                        selectinload(EmergencyCall.user),
+                        selectinload(EmergencyCall.guard)
+                    )
+                    .where(EmergencyCall.id == call_id)
+                )
+                call = result.scalar_one_or_none()
+
+                if not call:
+                    logger.warning(f"Dispatch background: Call {call_id} not found.")
+                    return
+
+                # If the call is no longer in OFFER_SENT status or is assigned to another guard, do nothing
+                if call.status != CallStatus.OFFER_SENT or call.guard_id != initial_guard_id:
+                    logger.info(f"Dispatch background: Call {call.id} is in state {call.status} (assigned to {call.guard_id}). No broadcast needed.")
+                    return
+
+                # Collect guards who have already declined this call
+                declined_ids = await cls._get_declined_guard_ids(db, call.id)
+                exclude_ids = list(declined_ids)
+                if initial_guard_id not in exclude_ids:
+                    exclude_ids.append(initial_guard_id)
+
+                candidates = await cls._find_available_guards(
+                    db,
+                    call=call,
+                    exclude_ids=exclude_ids,
+                )
+
+                if candidates:
+                    logger.info(f"Dispatch background: Broadcasting call {call.id} to {len(candidates)} other guards after 1 minute.")
+                    await notification_service.broadcast_new_emergency(candidates, call)
+                else:
+                    logger.info(f"Dispatch background: No other available guards to broadcast call {call.id} to.")
+        except Exception as e:
+            logger.error(f"Error in scheduled broadcast for call {call_id}: {e}", exc_info=True)

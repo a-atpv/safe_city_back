@@ -135,6 +135,19 @@ async def create_guard(
     return guard
 
 
+@router.get("/guards/online", response_model=GuardListResponse)
+async def get_online_guards(
+    current_admin: CompanyAdmin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get currently online guards"""
+    guards = await GuardService.get_online_by_company(db, current_admin.security_company_id)
+    return GuardListResponse(
+        guards=[GuardResponse.model_validate(g) for g in guards],
+        total=len(guards)
+    )
+
+
 @router.get("/guards/{guard_id}", response_model=GuardResponse)
 async def get_guard(
     guard_id: int,
@@ -178,19 +191,6 @@ async def deactivate_guard(
 
     await GuardService.delete(db, guard)
     return APIResponse(success=True, message="Guard deactivated")
-
-
-@router.get("/guards/online", response_model=GuardListResponse)
-async def get_online_guards(
-    current_admin: CompanyAdmin = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get currently online guards"""
-    guards = await GuardService.get_online_by_company(db, current_admin.security_company_id)
-    return GuardListResponse(
-        guards=[GuardResponse.model_validate(g) for g in guards],
-        total=len(guards)
-    )
 
 
 # ============ Call Management ============

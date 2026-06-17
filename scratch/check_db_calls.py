@@ -17,7 +17,7 @@ async def main():
         calls = call_result.scalars().all()
         print(f"\nTotal calls in DB: {len(calls)}")
         for c in calls:
-            print(f"Call ID: {c.id}, Status: {c.status}, User ID: {c.user_id}, Address: {c.address}, Lat: {c.latitude}, Lng: {c.longitude}")
+            print(f"Call ID: {c.id}, Status: {c.status}, User ID: {c.user_id}, Guard ID: {c.guard_id}, Address: {c.address}, Lat: {c.latitude}, Lng: {c.longitude}")
 
 if __name__ == '__main__':
     asyncio.run(main())

@@ -1,17 +1,15 @@
 import asyncio
+from sqlalchemy import select
 from app.core.database import async_session
 from app.models import Guard
-from sqlalchemy import select
 
-async def check():
-    async with async_session() as session:
-        result = await session.execute(
-            select(Guard).where(Guard.is_online == True)
-        )
+async def main():
+    async with async_session() as db:
+        result = await db.execute(select(Guard))
         guards = result.scalars().all()
-        print(f"Online guards: {len(guards)}")
+        print(f"Total guards in DB: {len(guards)}")
         for g in guards:
-            print(f"ID: {g.id}, Name: {g.full_name}, Lat: {g.current_latitude}, Lon: {g.current_longitude}, Token: {g.fcm_token[:15] if g.fcm_token else 'None'}...")
+            print(f"Guard ID: {g.id}, Name: {g.full_name}, is_on_call: {g.is_on_call}, Lat: {g.current_latitude}, Lng: {g.current_longitude}, Last Update: {g.last_location_update}")
 
-if __name__ == "__main__":
-    asyncio.run(check())
+if __name__ == '__main__':
+    asyncio.run(main())

@@ -47,6 +47,8 @@ class GuardResponse(BaseModel):
     total_reviews: int
     total_calls: int
     completed_calls: int
+    current_latitude: Optional[float] = None
+    current_longitude: Optional[float] = None
     created_at: datetime
 
     class Config:

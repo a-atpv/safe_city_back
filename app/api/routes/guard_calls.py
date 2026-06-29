@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
 from app.api.deps import get_current_guard
 from app.models import Guard, CallStatus
-from app.schemas.emergency import EmergencyCallResponse, EmergencyCallBrief, CallHistoryResponse
+from app.schemas.emergency import EmergencyCallResponse, EmergencyCallBrief, CallHistoryResponse, CallRedirectRequest
 from app.schemas.extras import CallReportCreate, CallReportResponse, CallMessageCreate, CallMessageResponse, CallMessagesListResponse
 from app.schemas.common import APIResponse
 from app.services.emergency import EmergencyService
@@ -229,6 +229,48 @@ async def complete_call(
 
     call = await EmergencyService.update_status(db, call, CallStatus.COMPLETED, "guard")
     return call
+
+
+@router.post("/call/{call_id}/redirect", response_model=APIResponse)
+async def redirect_call(
+    call_id: int,
+    data: CallRedirectRequest = CallRedirectRequest(),
+    current_guard: Guard = Depends(get_current_guard),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Redirect (hand off) an active call to other security services.
+
+    The call is re-opened and broadcast to the nearest available guards from
+    ANY company, excluding the redirecting guard. Allowed while the call is
+    actively being handled (accepted / en_route / arrived).
+    """
+    from app.services.dispatch import DispatchService
+
+    call = await EmergencyService.get_by_id(db, call_id)
+    if not call or call.guard_id != current_guard.id:
+        raise HTTPException(status_code=404, detail="Call not found")
+
+    if call.status not in [CallStatus.ACCEPTED, CallStatus.EN_ROUTE, CallStatus.ARRIVED]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Call cannot be redirected in current state"
+        )
+
+    note = (data.note or "").strip() or None
+    next_guard = await DispatchService.redirect_to_other_services(
+        db, call, redirecting_guard=current_guard, note=note
+    )
+
+    if next_guard:
+        return APIResponse(
+            success=True,
+            message="Вызов перенаправлен другой службе."
+        )
+    return APIResponse(
+        success=True,
+        message="Вызов перенаправлен, но свободных служб рядом не найдено — вызов отменён."
+    )
 
 
 @router.post("/call/{call_id}/report", response_model=CallReportResponse)

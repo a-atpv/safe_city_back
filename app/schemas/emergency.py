@@ -90,6 +90,11 @@ class CallStatusUpdate(BaseModel):
     meta_info: Optional[str] = None
 
 
+class CallRedirectRequest(BaseModel):
+    """Guard hands off an active call to other services; optional reason note."""
+    note: Optional[str] = None
+
+
 # Update forward refs
 EmergencyCallResponse.model_rebuild()
 EmergencyCallBrief.model_rebuild()

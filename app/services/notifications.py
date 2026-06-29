@@ -248,6 +248,31 @@ class NotificationService:
                 }
             )
 
+    async def notify_call_redirected(self, call: EmergencyCall, note: Optional[str] = None):
+        """
+        Tell the user their active call was handed off to another service.
+
+        Sent in addition to the regular status update, so the user app can show
+        a dedicated "your call was redirected" UI instead of a generic status
+        change. WebSocket-only (the in-app notification record and the status
+        update already cover push delivery).
+        """
+        if not call.user_id:
+            return
+
+        payload = {
+            "type": "call_redirected",
+            "call_id": call.id,
+            "status": call.status.value if hasattr(call.status, "value") else str(call.status),
+            "redirected": True,
+            "note": note,
+            "message": "Ваш вызов передан другой службе. Ищем ближайшего свободного сотрудника.",
+        }
+
+        from app.api.ws.manager import manager
+        await manager.send_to_user(call.user_id, payload)
+        logger.info(f"WS: Call {call.id} redirected notification sent to user {call.user_id}")
+
     async def notify_call_cancelled(self, user_id: int, call_id: int, reason: str, tokens: List[str] = None):
         """Notify user that their call has been cancelled by the system."""
         payload = {

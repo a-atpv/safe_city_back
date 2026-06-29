@@ -251,6 +251,126 @@ class DispatchService:
 
         return next_guard
 
+    @classmethod
+    async def redirect_to_other_services(
+        cls,
+        db: AsyncSession,
+        call: EmergencyCall,
+        redirecting_guard: Guard,
+        note: Optional[str] = None,
+    ) -> Optional[Guard]:
+        """
+        Hand off an ACTIVE call to other security services.
+
+        The guard currently handling the call redirects it: they are freed and
+        excluded from re-assignment, the call is re-opened, the company scope is
+        dropped so guards from ANY nearby company become eligible, and the offer
+        is broadcast to the whole eligible pool immediately.
+
+        Args:
+            db: Database session
+            call: The active emergency call being redirected
+            redirecting_guard: The guard handing off the call
+            note: Optional hand-off comment, surfaced to the next service and user
+
+        Returns:
+            The newly assigned Guard, or None if nobody else was available.
+        """
+        # Record the redirect in status history (also used to exclude this guard)
+        history = CallStatusHistory(
+            call_id=call.id,
+            status=CallStatus.SEARCHING,
+            changed_by="guard",
+            meta_info=json.dumps({
+                "action": "redirected",
+                "guard_id": redirecting_guard.id,
+                "guard_name": redirecting_guard.full_name,
+                "note": note,
+            }),
+        )
+        db.add(history)
+
+        # Persist the hand-off note on the call so the next responder can read it
+        if note:
+            call.notes = note
+
+        # Free the redirecting guard and re-open the call to ALL companies
+        redirecting_guard.is_on_call = False
+        call.guard_id = None
+        call.security_company_id = None  # drop scope → nearest guard from any company
+        call.status = CallStatus.SEARCHING
+
+        # Exclude everyone who already declined/redirected this call (incl. current guard)
+        excluded_ids = await cls._get_declined_guard_ids(db, call.id)
+        excluded_ids.add(redirecting_guard.id)
+
+        await db.flush()
+
+        # Offer to the next nearest guard across all companies
+        next_guard = await cls.assign_nearest_guard(
+            db, call, exclude_guard_ids=list(excluded_ids)
+        )
+
+        if next_guard:
+            # Broadcast to the rest of the eligible pool too — assign_nearest_guard
+            # only pinged the single closest guard.
+            other_candidates = await cls._find_available_guards(
+                db, call=call, exclude_ids=list(excluded_ids) + [next_guard.id]
+            )
+            if other_candidates:
+                await notification_service.broadcast_new_emergency(other_candidates, call)
+        else:
+            # No other service available — cancel the call by system
+            call.status = CallStatus.CANCELLED_BY_SYSTEM
+            cancel_history = CallStatusHistory(
+                call_id=call.id,
+                status=CallStatus.CANCELLED_BY_SYSTEM,
+                changed_by="system",
+                meta_info=json.dumps({
+                    "reason": "no_guards_available_after_redirect",
+                    "total_excluded": len(excluded_ids),
+                }),
+            )
+            db.add(cancel_history)
+            await db.flush()
+            await db.refresh(call)
+
+        # Notify the user: in-app record + live WS/FCM status update
+        if call.user_id:
+            note_suffix = f" Комментарий: {note}" if note else ""
+            user_notification = Notification(
+                user_id=call.user_id,
+                title="Вызов перенаправлен" if next_guard else "Охрана недоступна",
+                body=(
+                    "Ваш вызов передан другой службе. Ищем ближайшего свободного "
+                    f"сотрудника.{note_suffix}"
+                    if next_guard else
+                    "Сотрудник передал вызов, но свободных служб рядом сейчас нет. "
+                    "Пожалуйста, попробуйте позже или позвоните 102."
+                ),
+                type="call_update",
+                data=json.dumps({
+                    "call_id": call.id,
+                    "status": "searching" if next_guard else "cancelled_by_system",
+                    "redirected": True,
+                }),
+            )
+            db.add(user_notification)
+            await db.flush()
+
+        # Push a live status update to the user (and the newly assigned guard)
+        from app.services.emergency import EmergencyService
+        refreshed = await EmergencyService.get_by_id(db, call.id)
+        if refreshed:
+            await notification_service.notify_call_status_update(refreshed)
+            # Dedicated event so the user app shows a "redirected" UI rather than
+            # a generic status change. Only on success — if nobody was available
+            # the cancelled_by_system status update already informs the user.
+            if next_guard:
+                await notification_service.notify_call_redirected(refreshed, note=note)
+
+        return next_guard
+
     # ──────────────────────────────────────────────
     # Private helpers
     # ──────────────────────────────────────────────
@@ -296,7 +416,9 @@ class DispatchService:
     @classmethod
     async def _get_declined_guard_ids(cls, db: AsyncSession, call_id: int) -> set:
         """
-        Parse the call's status history to find all guard IDs that declined.
+        Parse the call's status history to find all guard IDs that should be
+        excluded from (re)assignment — i.e. guards who declined an offer or
+        redirected (handed off) the active call.
         Returns a set of guard IDs.
         """
         result = await db.execute(
@@ -313,7 +435,7 @@ class DispatchService:
                 continue
             try:
                 meta = json.loads(meta_raw)
-                if meta.get("action") == "declined" and meta.get("guard_id"):
+                if meta.get("action") in ("declined", "redirected") and meta.get("guard_id"):
                     declined_ids.add(meta["guard_id"])
             except (json.JSONDecodeError, TypeError):
                 continue

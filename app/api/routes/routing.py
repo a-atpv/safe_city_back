@@ -73,12 +73,27 @@ async def get_route_to_call(
             detail="STALE_GUARD_LOCATION"
         )
 
+    # Destination: prefer the user's live location when it is recent, otherwise
+    # fall back to the call's original (creation-time) coordinates. The user app
+    # keeps `last_*` fresh via /user/location during an active call.
+    dest_lat, dest_lng = call.latitude, call.longitude
+    user = call.user
+    if (
+        user is not None
+        and user.last_latitude is not None
+        and user.last_longitude is not None
+        and user.last_location_update is not None
+    ):
+        loc_age = (datetime.now(timezone.utc) - user.last_location_update).total_seconds()
+        if 0 <= loc_age <= 300:  # within 5 minutes
+            dest_lat, dest_lng = user.last_latitude, user.last_longitude
+
     # Build route
     route_result = await RoutingService.get_route(
         origin_lat=current_guard.current_latitude,
         origin_lng=current_guard.current_longitude,
-        dest_lat=call.latitude,
-        dest_lng=call.longitude,
+        dest_lat=dest_lat,
+        dest_lng=dest_lng,
         with_steps=with_steps,
     )
 
@@ -109,8 +124,8 @@ async def get_route_to_call(
     return CallRouteResponse(
         call_id=call.id,
         call_status=call.status.value if hasattr(call.status, 'value') else str(call.status),
-        user_latitude=call.latitude,
-        user_longitude=call.longitude,
+        user_latitude=dest_lat,
+        user_longitude=dest_lng,
         user_address=call.address,
         guard_latitude=current_guard.current_latitude,
         guard_longitude=current_guard.current_longitude,

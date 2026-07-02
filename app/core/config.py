@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     aws_region: str = "eu-north-1"
     aws_bucket_name: str = "safe-sity"
     
+    # Robokassa (Kazakhstan) — https://docs.robokassa.kz/
+    robokassa_merchant_login: Optional[str] = None
+    robokassa_password1: Optional[str] = None
+    robokassa_password2: Optional[str] = None
+    robokassa_is_test: bool = True
+    robokassa_hash_algo: str = "sha256"  # md5 | sha1 | sha256 | sha384 | sha512 — MUST match the shop cabinet
+    robokassa_payment_url: str = "https://auth.robokassa.kz/Merchant/Index.aspx"
+    robokassa_recurring_url: str = "https://auth.robokassa.kz/Merchant/Recurring"
+    robokassa_vat: str = "none"  # KZ receipt tax tag: none | vat0 | vat5 | vat12 | vat16
+    # Where to redirect the user after payment (frontend pages). If unset, a JSON status is returned.
+    payment_success_redirect: Optional[str] = None
+    payment_fail_redirect: Optional[str] = None
+
     class Config:
         env_file = ".env"
         extra = "ignore"

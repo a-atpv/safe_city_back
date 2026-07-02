@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -17,6 +17,12 @@ class Payment(Base):
     payment_method = Column(String(50), nullable=True)  # card / appstore / googleplay
     provider_transaction_id = Column(String(255), nullable=True)
     description = Column(String(500), nullable=True)
+
+    # Robokassa / recurring
+    plan_type = Column(String(50), nullable=True)          # monthly / yearly (the plan this payment is for)
+    is_recurring = Column(Boolean, default=False, nullable=False)  # first payment of a recurring series
+    parent_inv_id = Column(Integer, nullable=True)         # InvId of the first payment (for recurring children)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

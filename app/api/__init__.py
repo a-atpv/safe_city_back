@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import auth, user, emergency, guard_auth, guard, guard_calls, admin_auth, admin, extras, routing, global_admin
+from app.api.routes import auth, user, emergency, guard_auth, guard, guard_calls, admin_auth, admin, extras, routing, global_admin, payments
 from app.api.ws import endpoints as ws_endpoints
 
 api_router = APIRouter(prefix="/api/v1")
@@ -9,6 +9,7 @@ api_router.include_router(auth.router)
 api_router.include_router(user.router)
 api_router.include_router(emergency.router)
 api_router.include_router(extras.router)
+api_router.include_router(payments.router)
 
 # Guard app routes
 api_router.include_router(guard_auth.router)

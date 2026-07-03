@@ -10,6 +10,7 @@ Handles:
 
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from math import radians, cos, sin, asin, sqrt
 from sqlalchemy import select, and_
@@ -53,6 +54,13 @@ class DispatchService:
 
     # Maximum distance in km to consider a guard "nearby"
     MAX_SEARCH_RADIUS_KM = 50.0
+
+    # A guard's last known location is only trusted for dispatch if it was
+    # reported within this window. Anything older is treated as "position
+    # unknown" (e.g. the guard closed the app / lost signal), so the guard is
+    # NOT considered a candidate and the call goes to the next truly-nearest
+    # guard instead of to whoever happened to freeze closest when they quit.
+    LOCATION_FRESHNESS_SECONDS = 180
 
     # ──────────────────────────────────────────────
     # Public API
@@ -388,15 +396,26 @@ class DispatchService:
           - not on another call (is_on_call = False)
           - active status
           - have a known location
+          - whose location is FRESH (reported within LOCATION_FRESHNESS_SECONDS)
           - belong to the call's company (if one is assigned)
           - not in the exclude list
         """
+        # Only trust a guard's coordinates if they were reported recently.
+        # A guard who closed the app keeps is_online=True with frozen
+        # coordinates; excluding stale fixes here means the SOS is routed by
+        # the guard's *current* whereabouts, not where they were when they quit.
+        fresh_cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=cls.LOCATION_FRESHNESS_SECONDS
+        )
+
         conditions = [
             Guard.is_online == True,
             Guard.is_on_call == False,
             Guard.status == "active",
             Guard.current_latitude.isnot(None),
             Guard.current_longitude.isnot(None),
+            Guard.last_location_update.isnot(None),
+            Guard.last_location_update >= fresh_cutoff,
         ]
 
         # Scope to the assigned company if one exists

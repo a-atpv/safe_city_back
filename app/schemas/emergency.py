@@ -4,6 +4,7 @@ from datetime import datetime
 from app.models.emergency import CallStatus
 
 from app.schemas.guard import GuardBrief
+from app.schemas.fields import AvatarUrl
 
 
 class EmergencyCallCreate(BaseModel):
@@ -15,7 +16,7 @@ class EmergencyCallCreate(BaseModel):
 class UserBrief(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
-    avatar_url: Optional[str] = None
+    avatar_url: AvatarUrl = None
 
     class Config:
         from_attributes = True

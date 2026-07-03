@@ -50,6 +50,35 @@ class S3Service:
             return url[len(prefix):]
         return None
 
+    def presign_url(self, url: Optional[str], expires_in: int = 604800) -> Optional[str]:
+        """
+        Convert a stored public S3 URL into a time-limited presigned GET URL so
+        that private bucket objects can be fetched by clients without public ACLs.
+
+        Returns the original value unchanged if it is empty, not one of our S3
+        objects, or if signing fails (e.g. missing credentials in dev).
+        """
+        if not url:
+            return url
+
+        # Already a presigned URL (has query params) — leave as-is.
+        if "?" in url:
+            return url
+
+        key = self._key_from_url(url)
+        if key is None:
+            return url
+
+        try:
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": key},
+                ExpiresIn=expires_in,
+            )
+        except Exception as e:  # noqa: BLE001 - never let signing break a response
+            logger.warning(f"Failed to presign URL {url}: {e}")
+            return url
+
     async def upload_file(self, file: UploadFile, folder: str) -> str:
         """
         Upload a file to S3.

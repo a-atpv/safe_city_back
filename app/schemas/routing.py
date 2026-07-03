@@ -3,6 +3,8 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+from app.schemas.fields import AvatarUrl
+
 
 class RouteRequest(BaseModel):
     """Request body for getting a route."""
@@ -65,7 +67,7 @@ class CallRouteResponse(BaseModel):
 
     # Guard brief info
     guard_name: Optional[str] = None
-    guard_avatar_url: Optional[str] = None
+    guard_avatar_url: AvatarUrl = None
     guard_rating: Optional[float] = None
     guard_total_reviews: Optional[int] = None
     guard_phone: Optional[str] = None

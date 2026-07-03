@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 
+from app.schemas.fields import AvatarUrl
+
 
 # ============ Guard Auth Schemas ============
 
@@ -38,7 +40,7 @@ class GuardResponse(BaseModel):
     email: str
     phone: Optional[str] = None
     full_name: str
-    avatar_url: Optional[str] = None
+    avatar_url: AvatarUrl = None
     employee_id: Optional[str] = None
     status: str
     is_online: bool
@@ -68,7 +70,7 @@ class GuardBrief(BaseModel):
     """Brief guard info for user-facing responses"""
     id: int
     full_name: str
-    avatar_url: Optional[str] = None
+    avatar_url: AvatarUrl = None
     rating: float
     total_reviews: int
 

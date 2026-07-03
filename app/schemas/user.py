@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
 
+from app.schemas.fields import AvatarUrl
+
 
 # ============ Auth Schemas ============
 
@@ -57,7 +59,7 @@ class UserResponse(BaseModel):
     phone: Optional[str] = None
     role: str = "user"
     full_name: Optional[str] = None
-    avatar_url: Optional[str] = None
+    avatar_url: AvatarUrl = None
     is_verified: bool
     is_new: bool
     secret_phrase: Optional[str] = None

@@ -67,9 +67,14 @@ class Settings(BaseSettings):
     robokassa_payment_url: str = "https://auth.robokassa.kz/Merchant/Index.aspx"
     robokassa_recurring_url: str = "https://auth.robokassa.kz/Merchant/Recurring"
     robokassa_vat: str = "none"  # KZ receipt tax tag: none | vat0 | vat5 | vat12 | vat16
-    # Where to redirect the user after payment (frontend pages). If unset, a JSON status is returned.
+    # Where to redirect the user after payment (frontend WEB pages). If set, the
+    # Success/Fail callbacks 302 here. If unset, an HTML page bounces the user
+    # back into the mobile app via the custom scheme below.
     payment_success_redirect: Optional[str] = None
     payment_fail_redirect: Optional[str] = None
+    # Custom URL scheme of the mobile app, used to return from the payment
+    # browser back into the app (deep link "<scheme>://pay/success|fail").
+    payment_app_scheme: str = "safecity"
 
     class Config:
         env_file = ".env"

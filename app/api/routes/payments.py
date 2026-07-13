@@ -7,8 +7,10 @@ Public (no auth) callbacks:
 """
 import logging
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
@@ -93,6 +95,58 @@ def _pick(data: dict, *names: str):
     return None
 
 
+def _app_return_html(success: bool, inv_id: Optional[str]) -> str:
+    """Tiny page shown in the payment browser that bounces the user back into
+    the mobile app via the custom scheme, with a manual fallback button.
+
+    On Android the in-app WebView intercepts the /success|/fail navigation and
+    never renders this; on iOS the SFSafariViewController renders it and the
+    scheme redirect dismisses the sheet and foregrounds the app.
+    """
+    scheme = settings.payment_app_scheme or "safecity"
+    kind = "success" if success else "fail"
+    link = f"{scheme}://pay/{kind}" + (f"?inv_id={inv_id}" if inv_id else "")
+    title = "Оплата прошла" if success else "Оплата не завершена"
+    icon = "✓" if success else "✕"
+    color = "#22C55E" if success else "#EF4444"
+    style = (
+        "<style>html,body{margin:0;height:100%;background:#0F172A;color:#F1F5F9;"
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}"
+        ".wrap{display:flex;min-height:100%;align-items:center;justify-content:center;padding:24px}"
+        ".card{max-width:360px;text-align:center}"
+        ".icon{width:72px;height:72px;line-height:72px;border-radius:50%;margin:0 auto 20px;"
+        "font-size:38px;color:#fff}h1{font-size:20px;margin:0 0 8px}"
+        "p{color:#94A3B8;margin:0 0 24px;font-size:15px}"
+        "a.btn{display:inline-block;background:#2563EB;color:#fff;text-decoration:none;"
+        "padding:14px 28px;border-radius:12px;font-size:16px;font-weight:600}</style>"
+    )
+    # Plain concatenation (no f-string) so JS/CSS braces need no escaping.
+    script = (
+        '<script>var t="' + link + '";location.replace(t);'
+        "setTimeout(function(){location.href=t},600);</script>"
+    )
+    return (
+        '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        "<title>Safe City</title>" + script + style
+        + '</head><body><div class="wrap"><div class="card">'
+        + f'<div class="icon" style="background:{color}">{icon}</div>'
+        + f"<h1>{title}</h1><p>Возвращаемся в приложение…</p>"
+        + f'<a class="btn" href="{link}">Вернуться в приложение</a>'
+        + "</div></div></body></html>"
+    )
+
+
+def _finish(success: bool, inv_id: Optional[str]):
+    """Web override (configured http redirect) wins; otherwise bounce to the app."""
+    redirect = (
+        settings.payment_success_redirect if success else settings.payment_fail_redirect
+    )
+    if redirect:
+        return RedirectResponse(redirect, status_code=302)
+    return HTMLResponse(_app_return_html(success, inv_id))
+
+
 @router.api_route("/robokassa/result", methods=["GET", "POST"])
 async def robokassa_result(request: Request, db: AsyncSession = Depends(get_db)):
     """Server-to-server payment notification. Must return exactly 'OK<InvId>'."""
@@ -111,7 +165,8 @@ async def robokassa_result(request: Request, db: AsyncSession = Depends(get_db))
 
 @router.api_route("/robokassa/success", methods=["GET", "POST"])
 async def robokassa_success(request: Request):
-    """User is redirected here after paying. Activation happens on ResultURL, not here."""
+    """User is redirected here after paying. Activation happens on ResultURL, not
+    here — this only returns the user to the app (or web redirect)."""
     data = await _params(request)
     out_sum = _pick(data, "OutSum", "outSum")
     inv_id = _pick(data, "InvId", "invId")
@@ -120,14 +175,7 @@ async def robokassa_success(request: Request):
     valid = bool(out_sum and inv_id and signature) and robokassa.verify_success_signature(
         out_sum, inv_id, signature
     )
-    if not valid:
-        if settings.payment_fail_redirect:
-            return RedirectResponse(settings.payment_fail_redirect, status_code=302)
-        return PlainTextResponse("bad sign", status_code=400)
-
-    if settings.payment_success_redirect:
-        return RedirectResponse(settings.payment_success_redirect, status_code=302)
-    return {"status": "success", "inv_id": inv_id}
+    return _finish(valid, inv_id)
 
 
 @router.api_route("/robokassa/fail", methods=["GET", "POST"])
@@ -137,6 +185,4 @@ async def robokassa_fail(request: Request, db: AsyncSession = Depends(get_db)):
     inv_id = _pick(data, "InvId", "invId")
     if inv_id:
         await PaymentService.mark_failed(db, inv_id)
-    if settings.payment_fail_redirect:
-        return RedirectResponse(settings.payment_fail_redirect, status_code=302)
-    return {"status": "fail", "inv_id": inv_id}
+    return _finish(False, inv_id)

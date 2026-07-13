@@ -23,7 +23,13 @@ class Guard(Base):
     # Real-time location
     current_latitude = Column(Float, nullable=True)
     current_longitude = Column(Float, nullable=True)
+    current_accuracy = Column(Float, nullable=True)  # metres — reported accuracy of the stored fix
+    # Freshness of the *position*: bumped only when we accept a coordinate. Dispatch
+    # and routing trust this to route an SOS by the guard's real whereabouts.
     last_location_update = Column(DateTime(timezone=True), nullable=True)
+    # Liveness: bumped on every ping, even when the fix is rejected. Says "the device
+    # is talking to us", NOT "we know where the guard is" — keep the two apart.
+    last_seen = Column(DateTime(timezone=True), nullable=True)
 
     # Aggregated stats
     rating = Column(Float, default=5.0)

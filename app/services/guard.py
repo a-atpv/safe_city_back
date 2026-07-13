@@ -1,13 +1,23 @@
-from typing import Optional, List
+import logging
+from typing import Optional, List, Tuple
 from datetime import datetime, timezone
 from sqlalchemy import select, desc, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models import Guard, GuardShift, GuardSettings
 
+logger = logging.getLogger(__name__)
+
 
 class GuardService:
     """Service for guard management"""
+
+    # A fix coarser than this is too imprecise to route a dispatch by — we keep
+    # the last good position rather than jump the guard across the neighbourhood.
+    MAX_LOCATION_ACCURACY_M = 100.0
+    # A move faster than this between two accepted fixes is a GPS teleport, not
+    # travel — reject it so the map doesn't flick to the wrong block and back.
+    MAX_PLAUSIBLE_SPEED_KMH = 200.0
 
     @staticmethod
     async def get_by_email(db: AsyncSession, email: str) -> Optional[Guard]:
@@ -73,6 +83,57 @@ class GuardService:
         return guard
 
     @staticmethod
+    def _evaluate_fix(
+        guard: Guard,
+        latitude: float,
+        longitude: float,
+        accuracy: Optional[float],
+        now: datetime,
+    ) -> Tuple[bool, str]:
+        """Decide whether an incoming fix is trustworthy enough to store.
+
+        Returns ``(accepted, reason)``. Rejects three ways garbage fixes sneak in:
+        coarse fixes, GPS teleports, and jitter (noise dressed up as movement).
+        """
+        # 1. Coarse fix — cell/Wi-Fi or a cold GPS start. Too imprecise to route by.
+        if accuracy is not None and accuracy > GuardService.MAX_LOCATION_ACCURACY_M:
+            return False, f"accuracy {accuracy:.0f}m > {GuardService.MAX_LOCATION_ACCURACY_M:.0f}m"
+
+        has_prev = (
+            guard.current_latitude is not None
+            and guard.current_longitude is not None
+            and guard.last_location_update is not None
+        )
+        if not has_prev:
+            return True, "first fix"
+
+        from app.services.routing import _haversine_km
+        dist_m = _haversine_km(
+            guard.current_latitude, guard.current_longitude, latitude, longitude
+        ) * 1000.0
+        dt_s = (now - guard.last_location_update).total_seconds()
+
+        # 2. Teleport — implausible speed vs the last *accepted* fix (not the last
+        #    ping, so a rejected fix can't skew the time base).
+        if dt_s > 0:
+            speed_kmh = (dist_m / 1000.0) / (dt_s / 3600.0)
+            if speed_kmh > GuardService.MAX_PLAUSIBLE_SPEED_KMH:
+                return False, f"anomalous speed {speed_kmh:.0f} km/h"
+
+        # 3. Jitter — a barely-there move reported by a *less* accurate fix is noise,
+        #    not travel. Keep the tighter position we already have.
+        prev_acc = guard.current_accuracy
+        if (
+            accuracy is not None
+            and prev_acc is not None
+            and accuracy > prev_acc
+            and dist_m <= prev_acc
+        ):
+            return False, f"jitter ({dist_m:.0f}m within prior {prev_acc:.0f}m, worse fix {accuracy:.0f}m)"
+
+        return True, "accepted"
+
+    @staticmethod
     async def update_location(
         db: AsyncSession,
         guard: Guard,
@@ -80,37 +141,28 @@ class GuardService:
         longitude: float,
         accuracy: Optional[float] = None
     ) -> Guard:
-        """Update guard's real-time location"""
-        import logging
-        logger = logging.getLogger(__name__)
+        """Update guard's real-time location.
 
+        Every ping bumps ``last_seen`` (liveness). A coordinate is stored — and
+        ``last_location_update`` bumped — only when the fix passes quality checks.
+        This keeps the dispatch freshness gate honest: a guard sending garbage
+        fixes goes *stale*, rather than looking fresh while pinned to an old spot.
+        """
         now = datetime.now(timezone.utc)
 
-        # Smooth jumps (anomaly detection)
-        if guard.current_latitude and guard.current_longitude and guard.last_location_update:
-            time_diff_hours = (now - guard.last_location_update).total_seconds() / 3600.0
-            if time_diff_hours > 0:
-                from app.services.routing import _haversine_km
-                dist_km = _haversine_km(
-                    guard.current_latitude, guard.current_longitude,
-                    latitude, longitude
-                )
-                speed_kmh = dist_km / time_diff_hours
-                
-                # If speed > 200 km/h, consider it an anomaly and reject
-                if speed_kmh > 200.0:
-                    logger.warning(f"Anomaly detected for guard {guard.id}: speed {speed_kmh:.1f} km/h. Ignoring location.")
-                    return guard
+        # Liveness first — the device is talking to us regardless of fix quality.
+        guard.last_seen = now
 
-        # Always update last activity time to keep guard "online"
+        accepted, reason = GuardService._evaluate_fix(guard, latitude, longitude, accuracy, now)
+        if not accepted:
+            logger.debug(f"Guard {guard.id} location fix rejected ({reason})")
+            await db.flush()
+            return guard
+
+        guard.current_latitude = latitude
+        guard.current_longitude = longitude
+        guard.current_accuracy = accuracy
         guard.last_location_update = now
-
-        # Only update coordinates if accuracy is acceptable (e.g. <= 500m)
-        if accuracy is None or accuracy <= 500:
-            guard.current_latitude = latitude
-            guard.current_longitude = longitude
-        else:
-            logger.debug(f"Guard {guard.id} location accuracy ({accuracy}m) is too low. Skipping coordinate update.")
 
         await db.flush()
 

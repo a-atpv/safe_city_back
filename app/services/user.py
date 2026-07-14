@@ -1,5 +1,6 @@
+from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models import User, Subscription, SubscriptionStatus
@@ -118,12 +119,22 @@ class UserService:
     
     @staticmethod
     async def has_active_subscription(db: AsyncSession, user_id: int) -> bool:
-        """Check if user has active subscription"""
+        """Check if user has a currently-active subscription.
+
+        Honors `expires_at`: an ACTIVE row whose period has already passed does
+        NOT count (a daily job flips such rows to EXPIRED, but access must end at
+        the expiry instant regardless of when that job runs).
+        """
+        now = datetime.now(timezone.utc)
         result = await db.execute(
             select(Subscription)
             .where(
                 Subscription.user_id == user_id,
-                Subscription.status == SubscriptionStatus.ACTIVE
+                Subscription.status == SubscriptionStatus.ACTIVE,
+                or_(
+                    Subscription.expires_at.is_(None),
+                    Subscription.expires_at > now,
+                ),
             )
         )
         subscription = result.scalar_one_or_none()

@@ -5,7 +5,7 @@ The single source of truth for a successful payment is the ResultURL callback
 (`handle_successful_result`); SuccessURL is UX only and never grants access.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from dateutil.relativedelta import relativedelta
@@ -17,6 +17,11 @@ from app.models import Payment, Subscription, SubscriptionStatus, User
 from app.services import robokassa
 
 logger = logging.getLogger(__name__)
+
+# Recurring auto-renewal (Phase 3) tuning.
+RENEW_LEAD_DAYS = 3          # start charging this many days before expiry
+RENEW_RETRY_GRACE_DAYS = 3   # keep retrying this many days after expiry, then give up
+RENEW_COOLDOWN_HOURS = 20    # min gap between charge attempts for the same subscription
 
 
 class PaymentService:
@@ -147,3 +152,146 @@ class PaymentService:
             payment.status = "failed"
             await db.commit()
         return payment
+
+    # --- Recurring auto-renewal (Phase 3) -------------------------------------
+    @staticmethod
+    async def renew_due_subscriptions(
+        db: AsyncSession, *, now: Optional[datetime] = None, dry_run: bool = False
+    ) -> dict:
+        """Charge recurring child payments for Robokassa subs nearing expiry.
+
+        Only subs whose anchor (parent) payment carried Recurring=true have a
+        saved card. `charge_recurring` merely *creates* the operation — the real
+        capture arrives asynchronously on ResultURL (`handle_successful_result`),
+        which extends `expires_at`. Idempotent per-day via a cooldown so a repeat
+        run never double-charges the same subscription.
+        """
+        now = now or datetime.now(timezone.utc)
+        window_lo = now - timedelta(days=RENEW_RETRY_GRACE_DAYS)
+        window_hi = now + timedelta(days=RENEW_LEAD_DAYS)
+        cooldown_since = now - timedelta(hours=RENEW_COOLDOWN_HOURS)
+
+        subs = (
+            await db.execute(
+                select(Subscription).where(
+                    Subscription.status == SubscriptionStatus.ACTIVE,
+                    Subscription.payment_provider == "robokassa",
+                    Subscription.expires_at.isnot(None),
+                    Subscription.expires_at > window_lo,
+                    Subscription.expires_at <= window_hi,
+                    Subscription.external_subscription_id.isnot(None),
+                )
+            )
+        ).scalars().all()
+
+        charged, skipped, failed = [], [], []
+        for sub in subs:
+            try:
+                parent_inv = int(sub.external_subscription_id)
+            except (TypeError, ValueError):
+                skipped.append({"sub": sub.id, "reason": "bad anchor"})
+                continue
+
+            parent = await db.get(Payment, parent_inv)
+            if parent is None or not parent.is_recurring:
+                skipped.append({"sub": sub.id, "reason": "not a recurring series"})
+                continue
+
+            recent = (
+                await db.execute(
+                    select(Payment.id)
+                    .where(
+                        Payment.subscription_id == sub.id,
+                        Payment.parent_inv_id == parent_inv,
+                        Payment.created_at >= cooldown_since,
+                    )
+                    .limit(1)
+                )
+            ).first()
+            if recent is not None:
+                skipped.append({"sub": sub.id, "reason": "charge in cooldown"})
+                continue
+
+            plan = get_plan(sub.plan_type or "monthly")
+            amount = plan.price_tiyn if plan else sub.price
+            title = plan.title if plan else (sub.plan_type or "Подписка Safe City")
+            if not amount:
+                skipped.append({"sub": sub.id, "reason": "no amount"})
+                continue
+
+            if dry_run:
+                charged.append(
+                    {"sub": sub.id, "user": sub.user_id, "amount": amount,
+                     "parent_inv": parent_inv, "dry_run": True}
+                )
+                continue
+
+            child = Payment(
+                user_id=sub.user_id,
+                subscription_id=sub.id,
+                amount=amount,
+                currency="KZT",
+                status="pending",
+                payment_method="card",
+                plan_type=sub.plan_type,
+                is_recurring=False,
+                parent_inv_id=parent_inv,
+                description=title,
+            )
+            db.add(child)
+            await db.flush()  # assign child.id -> new Robokassa InvId
+
+            try:
+                resp = await robokassa.charge_recurring(
+                    inv_id=child.id,
+                    previous_inv_id=parent_inv,
+                    amount_tiyn=amount,
+                    description=title,
+                    receipt_name=title,
+                )
+                await db.commit()
+                charged.append({"sub": sub.id, "inv": child.id, "resp": resp[:40]})
+            except Exception as e:  # network / Robokassa error — capture never happens
+                child.status = "failed"
+                await db.commit()
+                failed.append({"sub": sub.id, "inv": child.id, "error": str(e)[:120]})
+                logger.warning(
+                    "Recurring charge failed sub=%s inv=%s: %s", sub.id, child.id, e
+                )
+
+        logger.info(
+            "Renewal run: due=%s charged=%s skipped=%s failed=%s",
+            len(subs), len(charged), len(skipped), len(failed),
+        )
+        return {"due": len(subs), "charged": charged, "skipped": skipped, "failed": failed}
+
+    @staticmethod
+    async def expire_lapsed_subscriptions(
+        db: AsyncSession, *, now: Optional[datetime] = None, dry_run: bool = False
+    ) -> dict:
+        """Flip Robokassa subs to EXPIRED once past the renewal retry window.
+
+        Access already ends at `expires_at` via `has_active_subscription`; this
+        is bookkeeping so a lapsed sub stops being retried and reads as EXPIRED.
+        Scoped to Robokassa so manual grants / store subs are left untouched.
+        """
+        now = now or datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=RENEW_RETRY_GRACE_DAYS)
+        subs = (
+            await db.execute(
+                select(Subscription).where(
+                    Subscription.status == SubscriptionStatus.ACTIVE,
+                    Subscription.payment_provider == "robokassa",
+                    Subscription.expires_at.isnot(None),
+                    Subscription.expires_at <= cutoff,
+                )
+            )
+        ).scalars().all()
+
+        expired = [s.id for s in subs]
+        if not dry_run:
+            for s in subs:
+                s.status = SubscriptionStatus.EXPIRED
+            await db.commit()
+        logger.info("Expiry run: expired=%s dry_run=%s", len(expired), dry_run)
+        return {"expired": expired}

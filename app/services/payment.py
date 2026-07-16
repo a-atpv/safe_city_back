@@ -141,6 +141,12 @@ class PaymentService:
         sub.payment_provider = "robokassa"
         # Anchor for future recurring charges = the first (parent) invoice id.
         sub.external_subscription_id = str(payment.parent_inv_id or payment.id)
+        # A first (parent) recurring payment arms auto-renewal and clears any
+        # prior cancellation, so resubscribing after a cancel renews again.
+        # Renewal captures (children, is_recurring=False) leave these untouched.
+        if payment.is_recurring:
+            sub.auto_renew = True
+            sub.cancelled_at = None
 
     @staticmethod
     async def mark_failed(db: AsyncSession, inv_id: str) -> Optional[Payment]:
@@ -152,6 +158,31 @@ class PaymentService:
             payment.status = "failed"
             await db.commit()
         return payment
+
+    @staticmethod
+    async def cancel_subscription(
+        db: AsyncSession, user_id: int
+    ) -> Optional[Subscription]:
+        """Turn off auto-renewal for the user's active subscription.
+
+        Access is retained until `expires_at` (no refund, no immediate downgrade)
+        — only future recurring charges stop, because `renew_due_subscriptions`
+        skips subs with `auto_renew=False`. Idempotent: cancelling an already
+        cancelled sub is a no-op and returns it. Returns None when there is no
+        active subscription to cancel.
+        """
+        sub = (
+            await db.execute(select(Subscription).where(Subscription.user_id == user_id))
+        ).scalar_one_or_none()
+        if sub is None or sub.status != SubscriptionStatus.ACTIVE:
+            return None
+        if sub.cancelled_at is None:
+            sub.cancelled_at = datetime.now(timezone.utc)
+        sub.auto_renew = False
+        await db.commit()
+        await db.refresh(sub)
+        logger.info("Subscription cancelled sub=%s user=%s", sub.id, user_id)
+        return sub
 
     # --- Recurring auto-renewal (Phase 3) -------------------------------------
     @staticmethod
@@ -175,6 +206,7 @@ class PaymentService:
             await db.execute(
                 select(Subscription).where(
                     Subscription.status == SubscriptionStatus.ACTIVE,
+                    Subscription.auto_renew.is_(True),
                     Subscription.payment_provider == "robokassa",
                     Subscription.expires_at.isnot(None),
                     Subscription.expires_at > window_lo,

@@ -23,6 +23,7 @@ from app.schemas.payment import (
     PlanInfo,
     PlansResponse,
 )
+from app.schemas.user import SubscriptionResponse
 from app.services import robokassa
 from app.services.payment import PaymentService
 
@@ -74,6 +75,25 @@ async def create_payment(
         currency=payment.currency,
         payment_url=url,
     )
+
+
+@router.post("/subscription/cancel", response_model=SubscriptionResponse)
+async def cancel_subscription(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel auto-renewal for the current user's subscription.
+
+    Access is kept until the end of the paid period; only future recurring
+    charges are stopped. This backs the in-app «Отменить подписку» form.
+    """
+    sub = await PaymentService.cancel_subscription(db, current_user.id)
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active subscription to cancel",
+        )
+    return sub
 
 
 async def _params(request: Request) -> dict:

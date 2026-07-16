@@ -72,7 +72,12 @@ class Subscription(Base):
     status = Column(Enum(SubscriptionStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]), default=SubscriptionStatus.PENDING)
     plan_type = Column(String(50), default="monthly")  # monthly, yearly
     price = Column(Integer, nullable=True)  # в тиынах (копейках)
-    
+
+    # Auto-renewal: True while the sub should be recharged near expiry. Cancelling
+    # sets this False (and stamps cancelled_at) so renew_due_subscriptions skips it;
+    # access still runs to expires_at. A fresh recurring payment sets it back True.
+    auto_renew = Column(Boolean, default=False, nullable=False)
+
     started_at = Column(DateTime(timezone=True), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)

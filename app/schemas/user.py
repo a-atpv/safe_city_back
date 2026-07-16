@@ -79,8 +79,10 @@ class SubscriptionResponse(BaseModel):
     id: int
     status: str
     plan_type: str
+    auto_renew: bool = False
     started_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

@@ -13,7 +13,7 @@ Without a token every entry point turns into a no-op, so the API runs unchanged.
 """
 from app.bot import client, stats  # noqa: F401  (import order: no app.bot deps)
 from app.bot import handlers, notify, webhook  # noqa: F401
-from app.bot.webhook import WEBHOOK_PATH, router, setup_webhook
+from app.bot.webhook import WEBHOOK_PATH, router, schedule_setup, setup_webhook
 
 __all__ = [
     "client",
@@ -22,6 +22,7 @@ __all__ = [
     "stats",
     "webhook",
     "router",
+    "schedule_setup",
     "setup_webhook",
     "WEBHOOK_PATH",
 ]

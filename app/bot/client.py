@@ -20,6 +20,29 @@ TIMEOUT = httpx.Timeout(10.0)
 _username: Optional[str] = None  # cached getMe result
 
 
+class _RedactToken(logging.Filter):
+    """Keep the bot token out of the logs.
+
+    Bot API URLs embed the token in the path and httpx logs every request URL
+    at INFO, so without this the token is readable in `heroku logs`.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        token = settings.telegram_bot_token
+        if token:
+            if isinstance(record.args, tuple):
+                record.args = tuple(
+                    a.replace(token, "***") if isinstance(a, str) else a
+                    for a in record.args
+                )
+            if isinstance(record.msg, str):
+                record.msg = record.msg.replace(token, "***")
+        return True
+
+
+logging.getLogger("httpx").addFilter(_RedactToken())
+
+
 def is_configured() -> bool:
     return bool(settings.telegram_bot_token)
 

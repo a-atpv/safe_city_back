@@ -31,8 +31,11 @@ class _RedactToken(logging.Filter):
         token = settings.telegram_bot_token
         if token:
             if isinstance(record.args, tuple):
+                # httpx passes the URL as an httpx.URL object, not a str, so
+                # match on str(arg); only token-bearing args are rewritten,
+                # leaving %d args (status code) as numbers.
                 record.args = tuple(
-                    a.replace(token, "***") if isinstance(a, str) else a
+                    str(a).replace(token, "***") if token in str(a) else a
                     for a in record.args
                 )
             if isinstance(record.msg, str):

@@ -119,8 +119,11 @@ safe_city_back/
    ```bash
    heroku config:set -a safe-city-back \
      TELEGRAM_BOT_TOKEN=123456:AA... \
-     PUBLIC_BASE_URL=https://safe-city-back.herokuapp.com
+     PUBLIC_BASE_URL=https://safe-city-back-7c8ed50edd7d.herokuapp.com
    ```
+   `PUBLIC_BASE_URL` — точный домен из `heroku domains -a safe-city-back`.
+   Короткий `safe-city-back.herokuapp.com` на это приложение не ведёт (404),
+   и вебхук, зарегистрированный на него, не получит ни одного апдейта.
 3. Написать боту (или в группе, куда он добавлен) `/id` и подставить ответ:
    ```bash
    heroku config:set -a safe-city-back TELEGRAM_ADMIN_CHAT_IDS=123456789,-1002345678901:15

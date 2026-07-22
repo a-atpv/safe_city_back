@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot import notify
 from app.core.plans import get_plan
 from app.models import Payment, Subscription, SubscriptionStatus, User
 from app.services import robokassa
@@ -117,6 +118,9 @@ class PaymentService:
         await PaymentService._activate_subscription(db, payment)
         await db.commit()
         logger.info("Payment success inv=%s user=%s", payment.id, payment.user_id)
+        # Fire-and-forget admin alert; sits after the commit so it can only
+        # report a subscription that is already active. Never raises.
+        notify.payment_succeeded(payment.id)
         return payment
 
     @staticmethod

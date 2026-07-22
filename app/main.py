@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core import init_redis, close_redis, connect_db, settings, init_firebase
 from app.api import api_router
+from app.bot import setup_webhook as setup_telegram_webhook
 from app.core.bootstrap import run_bootstrap
 
 # Configure logging
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
         init_firebase()
         await run_bootstrap()
         await manager.start_listening()
+        await setup_telegram_webhook()
     except Exception as e:
         logger.error(f"Critical error during startup: {e}")
         logger.error(traceback.format_exc())

@@ -76,6 +76,18 @@ class Settings(BaseSettings):
     # browser back into the app (deep link "<scheme>://pay/success|fail").
     payment_app_scheme: str = "safecity"
 
+    # Public HTTPS origin of this deployment, e.g. https://safe-city-back.herokuapp.com
+    # Used to register the Telegram webhook on startup.
+    public_base_url: Optional[str] = None
+
+    # Telegram admin bot (served by this same web dyno, no extra process)
+    telegram_bot_token: Optional[str] = None
+    # Comma-separated chat ids allowed to run commands + receiving subscription
+    # alerts. Send /id to the bot to learn a chat's id.
+    telegram_admin_chat_ids: Optional[str] = None
+    # Optional override; defaults to a value derived from the bot token.
+    telegram_webhook_secret: Optional[str] = None
+
     class Config:
         env_file = ".env"
         extra = "ignore"

@@ -4,8 +4,7 @@ from app.core import get_db
 from app.api.deps import get_current_active_user
 from app.models import User
 from app.schemas import (
-    UserResponse, 
-    UserWithSubscription, 
+    UserWithSubscription,
     UserUpdate, 
     LocationUpdate,
     APIResponse,
@@ -30,18 +29,21 @@ async def get_current_user_info(
     return user
 
 
-@router.patch("/me", response_model=UserResponse)
+@router.patch("/me", response_model=UserWithSubscription)
 async def update_current_user(
     data: UserUpdate,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Update current user profile"""
-    user = await UserService.update(db, current_user, data)
-    return user
+    await UserService.update(db, current_user, data)
+    # Re-read with the subscription eagerly loaded: clients overwrite their whole
+    # cached user with this payload, so a response without `subscription` reads
+    # as "subscription lost" until the next /user/me.
+    return await UserService.get_with_subscription(db, current_user.id)
 
 
-@router.post("/me/avatar", response_model=UserResponse)
+@router.post("/me/avatar", response_model=UserWithSubscription)
 async def upload_user_avatar(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_active_user),
@@ -56,8 +58,9 @@ async def upload_user_avatar(
     url = await s3_service.upload_file(file, "avatars/users")
     current_user.avatar_url = url
     await db.flush()
-    await db.refresh(current_user)
-    return current_user
+    # Same as PATCH /me — must include the subscription, or the app hides paid
+    # features right after a photo change.
+    return await UserService.get_with_subscription(db, current_user.id)
 
 
 @router.delete("/me/avatar", response_model=APIResponse)
@@ -83,7 +86,7 @@ async def update_location(
 ):
     """Update user's current location"""
     await UserService.update_location(
-        db, current_user, data.latitude, data.longitude
+        db, current_user, data.latitude, data.longitude, data.accuracy
     )
     return APIResponse(success=True, message="Location updated")
 

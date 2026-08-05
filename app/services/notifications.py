@@ -1,12 +1,23 @@
+from datetime import timedelta
 from typing import Any, Dict, List, Optional, Union
 # from app.api.ws.manager import manager  # Moved inside methods to avoid circular import
 from app.models import EmergencyCall, Guard, User
 from firebase_admin import messaging
+from app.core.config import settings
 from app.core.firebase import init_firebase
 import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Custom siren shipped with the guard app (ios/Runner/sos_siren.caf). The Android
+# side uses its own copy in res/raw and picks it via the sos_siren_channel_v1
+# notification channel, so it is never named in the payload.
+SOS_SIREN_IOS_SOUND = "sos_siren.caf"
+
+# An SOS push that arrives late is worse than useless — the offer has already
+# escalated to other guards by then, so let FCM drop it instead of queueing it.
+SOS_PUSH_TTL = timedelta(seconds=120)
 
 
 class NotificationService:
@@ -72,6 +83,88 @@ class NotificationService:
                         logger.debug(f"FCM: Failed to send to token {tokens[idx]}: {resp.exception}")
         except Exception as e:
             logger.error(f"FCM: Error sending multicast message: {e}")
+
+    async def _send_sos_push(
+        self,
+        tokens: List[str],
+        title: str,
+        body: str,
+        data: Dict[str, Any],
+    ):
+        """
+        Send an SOS alert that makes the guard's phone sound a siren, including
+        while the app is backgrounded or killed.
+
+        Deliberately asymmetric per platform:
+
+        * **Android** — sent as a *data-only* message (no top-level
+          ``notification`` block), so the system does NOT auto-display it.
+          Instead the app's FCM background isolate wakes up and posts the alert
+          itself on the ``sos_siren_channel_v1`` channel with FLAG_INSISTENT, so
+          Android loops the bundled siren on the alarm stream until the guard
+          reacts. A plain notification message could only ever play a sound once,
+          at notification volume.
+        * **iOS** — cannot render a notification from Dart while backgrounded, so
+          the alert is built here in the APNS payload with the bundled siren as
+          its sound. Without the critical-alerts entitlement iOS plays it once
+          and still honours the mute switch; see ``fcm_ios_critical_alerts``.
+        """
+        init_firebase()
+
+        if not tokens:
+            return
+
+        # FCM data values must be strings. Title/body ride along in the data so
+        # the Android background isolate has something to render.
+        payload = {k: str(v) for k, v in {**data, "title": title, "body": body}.items()}
+
+        android_config = messaging.AndroidConfig(
+            priority="high",
+            ttl=SOS_PUSH_TTL,
+        )
+
+        # The dictionary sound form (name + volume) is only meaningful for
+        # critical alerts; otherwise APNS wants a plain sound file name.
+        if settings.fcm_ios_critical_alerts:
+            ios_sound = messaging.CriticalSound(
+                name=SOS_SIREN_IOS_SOUND,
+                critical=True,
+                volume=1.0,
+            )
+        else:
+            ios_sound = SOS_SIREN_IOS_SOUND
+
+        apns_config = messaging.APNSConfig(
+            headers={"apns-priority": "10", "apns-push-type": "alert"},
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(
+                    alert=messaging.ApsAlert(title=title, body=body),
+                    sound=ios_sound,
+                    badge=1,
+                    custom_data={"interruption-level": "time-sensitive"},
+                )
+            ),
+        )
+
+        message = messaging.MulticastMessage(
+            data=payload,
+            tokens=tokens,
+            android=android_config,
+            apns=apns_config,
+        )
+
+        try:
+            response = messaging.send_each_for_multicast(message)
+            logger.info(
+                f"FCM SOS: sent siren push to {response.success_count} device(s); "
+                f"{response.failure_count} failed."
+            )
+            if response.failure_count > 0:
+                for idx, resp in enumerate(response.responses):
+                    if not resp.success:
+                        logger.debug(f"FCM SOS: failed for token {tokens[idx]}: {resp.exception}")
+        except Exception as e:
+            logger.error(f"FCM SOS: error sending siren push: {e}")
 
     async def notify_call_status_update(self, call: EmergencyCall):
         """Notify the user and guard about a change in their call's status."""
@@ -174,8 +267,8 @@ class NotificationService:
 
         title = "🚨 Экстренный вызов!"
         body = f"Внимание! Новый вызов: {call.address or 'неизвестный адрес'}. Все доступные охранники, проверьте список вызовов."
-        
-        await self._send_fcm_notification(
+
+        await self._send_sos_push(
             tokens=list(set(all_tokens)), # Unique tokens
             title=title,
             body=body,
@@ -183,7 +276,8 @@ class NotificationService:
                 "call_id": str(call.id),
                 "type": "new_emergency_broadcast",
                 "latitude": str(call.latitude),
-                "longitude": str(call.longitude)
+                "longitude": str(call.longitude),
+                "address": call.address or "",
             }
         )
         logger.info(f"FCM: Broadcasted emergency call {call.id} to guards.")
@@ -234,17 +328,19 @@ class NotificationService:
         await manager.send_to_guard(guard.id, payload)
         logger.info(f"WS: New call offer notification sent to guard {guard.id}")
 
-        # 2. Send via FCM
+        # 2. Send via FCM — siren push, so a backgrounded/killed app still screams.
         if guard.fcm_token:
-            await self._send_fcm_notification(
+            await self._send_sos_push(
                 tokens=[guard.fcm_token],
-                title="Новый вызов!",
+                title="🚨 Новый вызов!",
                 body=f"Нужна ваша помощь! Расстояние: {round(distance_km, 1)} км",
                 data={
                     "call_id": str(call.id),
                     "type": "call_offer",
                     "latitude": str(call.latitude),
-                    "longitude": str(call.longitude)
+                    "longitude": str(call.longitude),
+                    "address": call.address or "",
+                    "distance_km": str(round(distance_km, 2)),
                 }
             )
 

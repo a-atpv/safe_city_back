@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # Firebase
     firebase_credentials_path: str = "Safe City Firebase Admin SDK.json"
     firebase_credentials_json: Optional[str] = None
+    # iOS critical alerts make the SOS siren ignore the mute switch and Do Not
+    # Disturb, but they require the com.apple.developer.usernotifications
+    # .critical-alerts entitlement, which Apple grants per-app on request.
+    # Leave off until that entitlement is on the guard app's provisioning
+    # profile — sending a critical sound without it makes APNS drop the push.
+    fcm_ios_critical_alerts: bool = False
     
     # AWS S3
     aws_access_key_id: Optional[str] = None

@@ -49,6 +49,14 @@ _TURN_PHRASES = {
     "u_turn": "Развернитесь",
 }
 
+# Краевые манёвры: и в comment, и в type приходят служебные маркеры.
+_TYPE_PHRASES = {
+    "start": "Начало движения",
+    "begin": "Начало движения",
+    "end": "Вы прибыли",
+    "finish": "Вы прибыли",
+}
+
 
 def _parse_wkt_selection(selection: str) -> List[Tuple[float, float]]:
     """WKT 'LINESTRING(lon lat, lon lat, ...)' → [(lat, lng), ...]."""
@@ -125,20 +133,25 @@ class DGisRoutingService:
                         coords.append(pt)
 
             if with_steps:
-                instruction = (maneuver.get("comment") or "").strip()
+                # У краевых манёвров comment — служебный маркер "start"/
+                # "finish", а не текст для человека (проверено на живом API).
+                raw = (maneuver.get("comment") or "").strip()
+                instruction = "" if raw.lower() in _TYPE_PHRASES else raw
                 if not instruction:
-                    instruction = _TURN_PHRASES.get(
-                        maneuver.get("turn_direction", ""),
-                        maneuver.get("type", ""),
+                    instruction = (
+                        _TYPE_PHRASES.get(raw.lower())
+                        or _TYPE_PHRASES.get(maneuver.get("type", ""))
+                        or _TURN_PHRASES.get(maneuver.get("turn_direction", ""))
+                        or maneuver.get("type", "")
                     )
                 if instruction or path:
+                    street_names = [n for n in (path.get("names") or []) if n]
                     steps.append(RouteStep(
                         instruction=instruction,
                         distance_meters=float(path.get("distance") or 0),
                         duration_seconds=float(path.get("duration") or 0),
-                        # 2ГИС не отдаёт название улицы отдельным полем —
-                        # оно уже внутри текста инструкции.
-                        name="",
+                        # Улица, по которой едем после манёвра.
+                        name=", ".join(street_names),
                     ))
 
         if len(coords) < 2:

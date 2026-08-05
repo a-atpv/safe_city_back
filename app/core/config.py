@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # profile — sending a critical sound without it makes APNS drop the push.
     fcm_ios_critical_alerts: bool = False
     
+    # 2GIS / 2ГИС (dev.2gis.com) — один ключ на Routing API и Geocoder API.
+    # Пока ключ не задан, маршруты строит OSRM, адреса ищет Nominatim (переход
+    # на 2ГИС включается самим фактом появления ключа, см. app/services/dgis.py).
+    dgis_api_key: Optional[str] = None
+
     # AWS S3
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None

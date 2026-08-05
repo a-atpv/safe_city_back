@@ -73,6 +73,14 @@ class OpenStreetMapService:
         country_codes: str = "kz"
     ) -> list[GeocodingResult]:
         """Convert address to coordinates (forward geocoding)"""
+        # 2ГИС — основной геокодер (переход на 2GIS), Nominatim — фолбэк.
+        from app.services.dgis import DGisGeocodingService
+
+        if DGisGeocodingService.is_configured():
+            results = await DGisGeocodingService.geocode(query, language, limit)
+            if results:
+                return results
+
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
@@ -115,7 +123,16 @@ class OpenStreetMapService:
         language: str = "ru"
     ) -> str:
         """Get a human-readable address for an emergency call location"""
-        result = await cls.reverse_geocode(latitude, longitude, language)
+        # 2ГИС — основной геокодер (переход на 2GIS, ветка 2gis): адреса и
+        # номера домов в Казахстане у него заметно точнее. Nominatim остаётся
+        # фолбэком, пока переход не завершён.
+        from app.services.dgis import DGisGeocodingService
+
+        result = None
+        if DGisGeocodingService.is_configured():
+            result = await DGisGeocodingService.reverse_geocode(latitude, longitude, language)
+        if result is None:
+            result = await cls.reverse_geocode(latitude, longitude, language)
         if not result:
             return f"{latitude:.6f}, {longitude:.6f}"
 
@@ -134,10 +151,10 @@ class OpenStreetMapService:
 
     @classmethod
     def get_tile_url(cls) -> str:
-        """Return OSM tile URL for map rendering on clients"""
-        return "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        """Tile URL for map rendering on clients (переход на 2ГИС)"""
+        return "https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1.5"
 
     @classmethod
     def get_tile_attribution(cls) -> str:
-        """Return required OSM attribution string"""
-        return "© OpenStreetMap contributors"
+        """Required attribution string for the map tiles"""
+        return "© 2ГИС"

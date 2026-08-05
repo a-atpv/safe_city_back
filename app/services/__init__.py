@@ -6,6 +6,7 @@ from app.services.guard import GuardService, GuardShiftService, GuardSettingsSer
 from app.services.admin import CompanyAdminService
 from app.services.geocoding import OpenStreetMapService
 from app.services.routing import RoutingService
+from app.services.dgis import DGisRoutingService, DGisGeocodingService
 from app.services.dispatch import DispatchService
 
 
@@ -21,6 +22,8 @@ __all__ = [
     "GuardSettingsService",
     "CompanyAdminService",
     "RoutingService",
+    "DGisRoutingService",
+    "DGisGeocodingService",
     "DispatchService",
 ]
 

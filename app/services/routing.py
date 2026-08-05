@@ -107,6 +107,20 @@ class RoutingService:
         Returns:
             RouteResult or None on failure
         """
+        # 2ГИС — основной провайдер (переход с OSRM на 2GIS, ветка 2gis).
+        # Ленивый импорт: dgis.py сам импортирует RouteResult из этого модуля.
+        from app.services.dgis import DGisRoutingService
+
+        if DGisRoutingService.is_configured():
+            try:
+                return await DGisRoutingService.get_route(
+                    origin_lat, origin_lng,
+                    dest_lat, dest_lng,
+                    with_steps=with_steps,
+                )
+            except Exception as e:
+                print(f"[RoutingService] 2GIS failed, trying OSRM: {e}")
+
         try:
             return await cls._osrm_route(
                 origin_lat, origin_lng,

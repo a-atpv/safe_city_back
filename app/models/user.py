@@ -42,6 +42,9 @@ class User(Base):
     # Location (last known)
     last_latitude = Column(Float, nullable=True)
     last_longitude = Column(Float, nullable=True)
+    current_accuracy = Column(Float, nullable=True)  # metres — accuracy of the stored fix
+    # Bumped ONLY when a fix passes quality checks — routing.py keys the 300s
+    # "route to live position" window on this, so a rejected fix must not touch it.
     last_location_update = Column(DateTime(timezone=True), nullable=True)
     
     # Push notifications

@@ -86,7 +86,12 @@ async def update_location(
 ):
     """Update user's current location"""
     await UserService.update_location(
-        db, current_user, data.latitude, data.longitude, data.accuracy
+        db,
+        current_user,
+        data.latitude,
+        data.longitude,
+        data.accuracy,
+        fix_age_seconds=(data.fix_age_ms or 0) / 1000.0,
     )
     return APIResponse(success=True, message="Location updated")
 

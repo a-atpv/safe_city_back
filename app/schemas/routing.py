@@ -53,10 +53,17 @@ class CallRouteResponse(BaseModel):
     call_id: int
     call_status: str
 
-    # User (victim) location
+    # User (victim) location — always the freshest point known, never a silent
+    # swap. The age/accuracy travel with it so the guard app can say
+    # "устарела N мин назад" instead of drawing a confident dot on an old place.
     user_latitude: float
     user_longitude: float
     user_address: Optional[str] = None
+    user_location_age_seconds: Optional[int] = None
+    user_location_accuracy: Optional[float] = None
+    user_location_is_live: bool = False
+    # "live" — the caller's tracked position; "call" — where SOS was pressed.
+    user_location_source: str = "call"
 
     # Guard location (current)
     guard_latitude: Optional[float] = None

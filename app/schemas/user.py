@@ -94,6 +94,16 @@ class LocationUpdate(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     accuracy: Optional[float] = Field(None, description="Location accuracy in meters")
+    fix_age_ms: Optional[int] = Field(
+        None,
+        ge=0,
+        description=(
+            "Age of the GPS fix at send time, in milliseconds. Relative (not a "
+            "wall-clock timestamp) so a skewed device clock cannot poison it. "
+            "Lets the server age a re-sent fix instead of treating every ping as "
+            "a fresh position."
+        ),
+    )
 
 
 # ============ Secret Phrase Schemas ============

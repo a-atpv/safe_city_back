@@ -27,6 +27,7 @@ from app.schemas.routing import (
 from app.schemas.common import APIResponse
 from app.services.routing import RoutingService
 from app.services.emergency import EmergencyService
+from app.services.user import UserService
 
 router = APIRouter(prefix="/guard/route", tags=["Guard Navigation"])
 
@@ -73,10 +74,24 @@ async def get_route_to_call(
             detail="STALE_GUARD_LOCATION"
         )
 
-    # Destination: prefer the user's live location when it is recent, otherwise
-    # fall back to the call's original (creation-time) coordinates. The user app
-    # keeps `last_*` fresh via /user/location during an active call.
+    # Destination: the FRESHEST point we know of, always — plus its age, so the
+    # guard sees when it was last confirmed. The call's own coordinates are just
+    # an older fix (taken when SOS was pressed), so they compete on the same
+    # terms instead of silently replacing a stale live position: swapping the
+    # point without saying so hands the guard an obsolete address that looks
+    # current, which is the one failure mode they cannot detect on their own.
+    now = datetime.now(timezone.utc)
+
+    def _aware(ts):
+        if ts is None:
+            return None
+        return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+
     dest_lat, dest_lng = call.latitude, call.longitude
+    dest_at = _aware(call.created_at)
+    dest_accuracy = None
+    dest_source = "call"
+
     user = call.user
     if (
         user is not None
@@ -84,9 +99,20 @@ async def get_route_to_call(
         and user.last_longitude is not None
         and user.last_location_update is not None
     ):
-        loc_age = (datetime.now(timezone.utc) - user.last_location_update).total_seconds()
-        if 0 <= loc_age <= 300:  # within 5 minutes
+        user_at = _aware(user.last_location_update)
+        if dest_at is None or user_at >= dest_at:
             dest_lat, dest_lng = user.last_latitude, user.last_longitude
+            dest_at = user_at
+            dest_accuracy = user.current_accuracy
+            dest_source = "live"
+
+    dest_age_s = int((now - dest_at).total_seconds()) if dest_at is not None else None
+    if dest_age_s is not None and dest_age_s < 0:
+        dest_age_s = 0
+    dest_is_live = (
+        dest_age_s is not None
+        and dest_age_s <= UserService.FRESH_LOCATION_SECONDS
+    )
 
     # Build route
     route_result = await RoutingService.get_route(
@@ -127,6 +153,10 @@ async def get_route_to_call(
         user_latitude=dest_lat,
         user_longitude=dest_lng,
         user_address=call.address,
+        user_location_age_seconds=dest_age_s,
+        user_location_accuracy=dest_accuracy,
+        user_location_is_live=dest_is_live,
+        user_location_source=dest_source,
         guard_latitude=current_guard.current_latitude,
         guard_longitude=current_guard.current_longitude,
         route=route,

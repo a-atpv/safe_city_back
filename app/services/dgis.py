@@ -187,6 +187,10 @@ class DGisGeocodingService:
     GEOCODE_URL = "https://catalog.api.2gis.com/3.0/items/geocode"
     _FIELDS = "items.point,items.address,items.adm_div,items.full_name"
 
+    # Короче, чем у Nominatim-фолбэка: приложение ждёт весь ответ бэкенда
+    # не дольше 10 с, и в этот бюджет должны уложиться оба провайдера.
+    _TIMEOUT = 6.0
+
     @classmethod
     def is_configured(cls) -> bool:
         return bool(settings.dgis_api_key)
@@ -238,7 +242,7 @@ class DGisGeocodingService:
         """Координаты → адрес. Возвращает None при любой проблеме —
         вызывающий код откатывается на Nominatim."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=cls._TIMEOUT) as client:
                 resp = await client.get(
                     cls.GEOCODE_URL,
                     params={
@@ -259,7 +263,8 @@ class DGisGeocodingService:
                 return None
             return cls._parse_item(items[0], latitude, longitude)
         except Exception as e:
-            print(f"[DGisGeocoding] reverse geocoding error: {e}")
+            # repr: сетевые исключения httpx стрингифицируются в пустоту.
+            print(f"[DGisGeocoding] reverse geocoding error: {e!r}")
             return None
 
     @classmethod
@@ -271,7 +276,7 @@ class DGisGeocodingService:
     ) -> list[GeocodingResult]:
         """Адрес → координаты. Пустой список при любой проблеме."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=cls._TIMEOUT) as client:
                 resp = await client.get(
                     cls.GEOCODE_URL,
                     params={
@@ -294,5 +299,5 @@ class DGisGeocodingService:
                 if item.get("point")
             ]
         except Exception as e:
-            print(f"[DGisGeocoding] geocoding error: {e}")
+            print(f"[DGisGeocoding] geocoding error: {e!r}")
             return []

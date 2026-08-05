@@ -119,7 +119,8 @@ class RoutingService:
                     with_steps=with_steps,
                 )
             except Exception as e:
-                print(f"[RoutingService] 2GIS failed, trying OSRM: {e}")
+                # repr: сетевые исключения httpx стрингифицируются в пустоту.
+                print(f"[RoutingService] 2GIS failed, trying OSRM: {e!r}")
 
         try:
             return await cls._osrm_route(

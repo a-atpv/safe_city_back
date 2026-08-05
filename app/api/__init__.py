@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import auth, user, emergency, guard_auth, guard, guard_calls, admin_auth, admin, extras, routing, global_admin, payments
+from app.api.routes import auth, user, emergency, guard_auth, guard, guard_calls, admin_auth, admin, extras, routing, geocode, global_admin, payments
 from app.api.ws import endpoints as ws_endpoints
 from app.bot import router as telegram_router
 
@@ -17,6 +17,7 @@ api_router.include_router(guard_auth.router)
 api_router.include_router(guard.router)
 api_router.include_router(guard_calls.router)
 api_router.include_router(routing.router)
+api_router.include_router(geocode.router)
 
 # Real-time WebSocket routes
 api_router.include_router(ws_endpoints.router)

@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "your-super-secret-jwt-key-change-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
-    refresh_token_expire_days: int = 7
+    # 90 days, not a week: the SOS app is opened rarely by design, and a refresh
+    # token that dies of old age means an e-mail OTP round trip before the one
+    # screen the user came for.
+    refresh_token_expire_days: int = 90
     
     # SMTP / Brevo API
     brevo_api_key: Optional[str] = None

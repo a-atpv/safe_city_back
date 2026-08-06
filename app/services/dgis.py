@@ -16,7 +16,9 @@ Docs:
   Geocoder: https://docs.2gis.com/ru/api/search/geocoder/overview
 """
 
+import logging
 import re
+from collections import Counter
 from typing import List, Optional, Tuple
 
 import httpx
@@ -25,6 +27,25 @@ import polyline as polyline_lib
 from app.core.config import settings
 from app.services.geocoding import GeocodingResult
 from app.services.routing import RouteResult, RouteStep
+
+logger = logging.getLogger(__name__)
+
+# Каждый запрос к 2ГИС — списанная единица тарифа, и узнать остаток можно только
+# в кабинете постфактум: в ответе его нет (в заголовках приходит лишь
+# x-apikey-status). Поэтому расход считаем сами и пишем в лог — иначе квота
+# кончается внезапно, как это и произошло на демо-ключе.
+#
+#   heroku logs -a <app> -n 1500 | grep -c '\[2gis-quota\] routing'
+#
+# Счётчик живёт в памяти процесса и обнуляется при рестарте дино; для «сколько
+# сожгли за сессию тестов» этого достаточно, за месяц считайте по строкам лога.
+_billed: Counter = Counter()
+
+
+def _bill(unit: str) -> None:
+    """Отметить в логе списанную единицу тарифа 2ГИС."""
+    _billed[unit] += 1
+    logger.info(f"[2gis-quota] {unit} #{_billed[unit]} (с рестарта процесса)")
 
 
 def _format_distance(meters: float) -> str:
@@ -107,6 +128,7 @@ class DGisRoutingService:
             "output": "detailed",
         }
 
+        _bill("routing")
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 cls.ROUTING_URL,
@@ -242,6 +264,7 @@ class DGisGeocodingService:
         """Координаты → адрес. Возвращает None при любой проблеме —
         вызывающий код откатывается на Nominatim."""
         try:
+            _bill("geocoder reverse")
             async with httpx.AsyncClient(timeout=cls._TIMEOUT) as client:
                 resp = await client.get(
                     cls.GEOCODE_URL,
@@ -254,7 +277,7 @@ class DGisGeocodingService:
                     },
                 )
                 if resp.status_code != 200:
-                    print(f"[DGisGeocoding] reverse HTTP {resp.status_code}")
+                    logger.warning(f"[DGisGeocoding] reverse HTTP {resp.status_code}")
                     return None
                 data = resp.json()
 
@@ -264,7 +287,7 @@ class DGisGeocodingService:
             return cls._parse_item(items[0], latitude, longitude)
         except Exception as e:
             # repr: сетевые исключения httpx стрингифицируются в пустоту.
-            print(f"[DGisGeocoding] reverse geocoding error: {e!r}")
+            logger.warning(f"[DGisGeocoding] reverse geocoding error: {e!r}")
             return None
 
     @classmethod
@@ -276,6 +299,7 @@ class DGisGeocodingService:
     ) -> list[GeocodingResult]:
         """Адрес → координаты. Пустой список при любой проблеме."""
         try:
+            _bill("geocoder forward")
             async with httpx.AsyncClient(timeout=cls._TIMEOUT) as client:
                 resp = await client.get(
                     cls.GEOCODE_URL,
@@ -288,7 +312,7 @@ class DGisGeocodingService:
                     },
                 )
                 if resp.status_code != 200:
-                    print(f"[DGisGeocoding] geocode HTTP {resp.status_code}")
+                    logger.warning(f"[DGisGeocoding] geocode HTTP {resp.status_code}")
                     return []
                 data = resp.json()
 
@@ -299,5 +323,5 @@ class DGisGeocodingService:
                 if item.get("point")
             ]
         except Exception as e:
-            print(f"[DGisGeocoding] geocoding error: {e!r}")
+            logger.warning(f"[DGisGeocoding] geocoding error: {e!r}")
             return []

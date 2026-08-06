@@ -22,6 +22,11 @@ class GuardService:
     # A move faster than this between two accepted fixes is a GPS teleport, not
     # travel — reject it so the map doesn't flick to the wrong block and back.
     MAX_PLAUSIBLE_SPEED_KMH = 200.0
+    # …but the speed test only means anything between fixes taken close together.
+    # Across a longer gap (app closed, phone off overnight, a flight, a device
+    # swap) any distance is plausible, and refusing the new fix would pin the
+    # guard to a position we already know is worthless.
+    TELEPORT_WINDOW_SECONDS = 300.0
 
     @staticmethod
     async def get_by_email(db: AsyncSession, email: str) -> Optional[Guard]:
@@ -137,8 +142,11 @@ class GuardService:
         ) * 1000.0
 
         # 2. Teleport — implausible speed vs the last *accepted* fix (not the last
-        #    ping, so a rejected fix can't skew the time base).
-        if stored_age_s > 0:
+        #    ping, so a rejected fix can't skew the time base). Only judged inside
+        #    the window where "too fast" still means "impossible": past it the
+        #    stored point is stale, and holding on to it would strand a guard whose
+        #    phone was off — or who moved cities — at their last known spot.
+        if 0 < stored_age_s <= GuardService.TELEPORT_WINDOW_SECONDS:
             speed_kmh = (dist_m / 1000.0) / (stored_age_s / 3600.0)
             if speed_kmh > GuardService.MAX_PLAUSIBLE_SPEED_KMH:
                 return "reject", f"anomalous speed {speed_kmh:.0f} km/h"

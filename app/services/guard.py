@@ -15,6 +15,10 @@ class GuardService:
     # A fix coarser than this is too imprecise to route a dispatch by — we keep
     # the last good position rather than jump the guard across the neighbourhood.
     MAX_LOCATION_ACCURACY_M = 100.0
+    # …but a frozen point is worse than a rough one. Once the stored position is
+    # older than this, a coarse fix is accepted anyway: routing from a real
+    # position with honest accuracy beats refusing to route at all.
+    STALE_AFTER_SECONDS = 120.0
     # A move faster than this between two accepted fixes is a GPS teleport, not
     # travel — reject it so the map doesn't flick to the wrong block and back.
     MAX_PLAUSIBLE_SPEED_KMH = 200.0
@@ -89,39 +93,59 @@ class GuardService:
         longitude: float,
         accuracy: Optional[float],
         now: datetime,
-    ) -> Tuple[bool, str]:
-        """Decide whether an incoming fix is trustworthy enough to store.
+    ) -> Tuple[str, str]:
+        """Decide what to do with an incoming fix.
 
-        Returns ``(accepted, reason)``. Rejects three ways garbage fixes sneak in:
-        coarse fixes, GPS teleports, and jitter (noise dressed up as movement).
+        Returns ``(verdict, reason)`` where verdict is one of:
+          ``accept``  — store the coordinate and stamp it;
+          ``confirm`` — same place, worse measurement: keep the stored coordinate
+                        but stamp it, because the guard *was* just measured there;
+          ``reject``  — garbage (a teleport): change nothing and let the point age.
+
+        The split matters: a rejected fix leaves ``last_location_update`` behind,
+        and dispatch/routing read that stamp. Treating "no movement" as "no news"
+        freezes a standing guard out of routing after the 10-minute gate, even
+        though their phone is reporting every 60 s.
         """
-        # 1. Coarse fix — cell/Wi-Fi or a cold GPS start. Too imprecise to route by.
-        if accuracy is not None and accuracy > GuardService.MAX_LOCATION_ACCURACY_M:
-            return False, f"accuracy {accuracy:.0f}m > {GuardService.MAX_LOCATION_ACCURACY_M:.0f}m"
-
         has_prev = (
             guard.current_latitude is not None
             and guard.current_longitude is not None
             and guard.last_location_update is not None
         )
         if not has_prev:
-            return True, "first fix"
+            return "accept", "first fix"
+
+        prev_at = guard.last_location_update
+        if prev_at.tzinfo is None:
+            prev_at = prev_at.replace(tzinfo=timezone.utc)
+        stored_age_s = (now - prev_at).total_seconds()
+
+        # 1. Coarse fix — cell/Wi-Fi or a cold GPS start. Normally not good enough
+        #    to route by, BUT never at the price of freezing the point: once the
+        #    stored position has gone stale, a rough current position beats a
+        #    precise obsolete one (its accuracy is stored and shown in the UI).
+        if accuracy is not None and accuracy > GuardService.MAX_LOCATION_ACCURACY_M:
+            if stored_age_s >= GuardService.STALE_AFTER_SECONDS:
+                return "accept", (
+                    f"coarse {accuracy:.0f}m accepted — stored fix {stored_age_s:.0f}s stale"
+                )
+            return "reject", f"accuracy {accuracy:.0f}m > {GuardService.MAX_LOCATION_ACCURACY_M:.0f}m"
 
         from app.services.routing import _haversine_km
         dist_m = _haversine_km(
             guard.current_latitude, guard.current_longitude, latitude, longitude
         ) * 1000.0
-        dt_s = (now - guard.last_location_update).total_seconds()
 
         # 2. Teleport — implausible speed vs the last *accepted* fix (not the last
         #    ping, so a rejected fix can't skew the time base).
-        if dt_s > 0:
-            speed_kmh = (dist_m / 1000.0) / (dt_s / 3600.0)
+        if stored_age_s > 0:
+            speed_kmh = (dist_m / 1000.0) / (stored_age_s / 3600.0)
             if speed_kmh > GuardService.MAX_PLAUSIBLE_SPEED_KMH:
-                return False, f"anomalous speed {speed_kmh:.0f} km/h"
+                return "reject", f"anomalous speed {speed_kmh:.0f} km/h"
 
         # 3. Jitter — a barely-there move reported by a *less* accurate fix is noise,
-        #    not travel. Keep the tighter position we already have.
+        #    not travel. Keep the tighter position, but treat it as confirmed: we
+        #    just measured the guard inside the radius we already had.
         prev_acc = guard.current_accuracy
         if (
             accuracy is not None
@@ -129,9 +153,9 @@ class GuardService:
             and accuracy > prev_acc
             and dist_m <= prev_acc
         ):
-            return False, f"jitter ({dist_m:.0f}m within prior {prev_acc:.0f}m, worse fix {accuracy:.0f}m)"
+            return "confirm", f"jitter ({dist_m:.0f}m within prior {prev_acc:.0f}m, worse fix {accuracy:.0f}m)"
 
-        return True, "accepted"
+        return "accept", "accepted"
 
     @staticmethod
     async def update_location(
@@ -147,21 +171,30 @@ class GuardService:
         ``last_location_update`` bumped — only when the fix passes quality checks.
         This keeps the dispatch freshness gate honest: a guard sending garbage
         fixes goes *stale*, rather than looking fresh while pinned to an old spot.
+
+        A fix that merely re-measures the same spot less precisely is not garbage:
+        it confirms the stored position, so the stamp is refreshed while the
+        coordinate (and its better accuracy) is kept.
         """
         now = datetime.now(timezone.utc)
 
         # Liveness first — the device is talking to us regardless of fix quality.
         guard.last_seen = now
 
-        accepted, reason = GuardService._evaluate_fix(guard, latitude, longitude, accuracy, now)
-        if not accepted:
+        verdict, reason = GuardService._evaluate_fix(guard, latitude, longitude, accuracy, now)
+        if verdict == "reject":
             logger.debug(f"Guard {guard.id} location fix rejected ({reason})")
             await db.flush()
             return guard
 
-        guard.current_latitude = latitude
-        guard.current_longitude = longitude
-        guard.current_accuracy = accuracy
+        if verdict == "accept":
+            guard.current_latitude = latitude
+            guard.current_longitude = longitude
+            guard.current_accuracy = accuracy
+        else:
+            # "confirm": same place, worse measurement — keep the coordinate and
+            # its accuracy, refresh only the timestamp.
+            logger.debug(f"Guard {guard.id} position confirmed in place ({reason})")
         guard.last_location_update = now
 
         await db.flush()
@@ -188,15 +221,19 @@ class GuardService:
 
             if active_call and active_call.user_id:
                 from app.api.ws.manager import manager
+                # Broadcast what is actually stored — on "confirm" the incoming
+                # coordinate was discarded as noise, so sending it would move the
+                # guard's dot by exactly the jitter we just filtered out.
                 await manager.send_to_user(active_call.user_id, {
                     "type": "guard_location_update",
                     "call_id": active_call.id,
-                    "latitude": latitude,
-                    "longitude": longitude,
+                    "latitude": guard.current_latitude,
+                    "longitude": guard.current_longitude,
                 })
                 logger.debug(
-                    f"WS: Sent guard location ({latitude}, {longitude}) "
-                    f"to user {active_call.user_id} for call {active_call.id}"
+                    f"WS: Sent guard location ({guard.current_latitude}, "
+                    f"{guard.current_longitude}) to user {active_call.user_id} "
+                    f"for call {active_call.id}"
                 )
         except Exception as e:
             # Never fail the location update because of a WS error

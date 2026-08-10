@@ -49,7 +49,15 @@ class EmergencyCallBrief(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[int] = None
-    
+
+    # Где это было. Без этих трёх полей история вызовов у охранника показывала
+    # «—» вместо адреса, а на карточке вызова рисовала метку по координатам
+    # города-заглушки — уверенная метка не на том месте вместо честного «нет
+    # координат».
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    address: Optional[str] = None
+
     user: Optional[UserBrief] = None
     guard: Optional["GuardBrief"] = None
     security_company: Optional["SecurityCompanyBrief"] = None

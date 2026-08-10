@@ -213,6 +213,12 @@ class DGisGeocodingService:
     # не дольше 10 с, и в этот бюджет должны уложиться оба провайдера.
     _TIMEOUT = 6.0
 
+    # В каком радиусе искать дом или улицу при обратном геокодинге. С фильтром
+    # `type` радиус обязателен — без него 2ГИС отдаёт пустой список. 200 м: в
+    # застройке ближайший дом находится и в пятидесяти, а запас нужен для
+    # промзон и новых районов, где до ближайшего адреса дальше.
+    _REVERSE_RADIUS_M = 200
+
     @classmethod
     def is_configured(cls) -> bool:
         return bool(settings.dgis_api_key)
@@ -255,6 +261,43 @@ class DGisGeocodingService:
         )
 
     @classmethod
+    async def _reverse_request(
+        cls,
+        latitude: float,
+        longitude: float,
+        language: str,
+        extra: Optional[dict] = None,
+    ) -> Optional[GeocodingResult]:
+        """Один запрос к геокодеру. None — и когда 2ГИС ответил ошибкой, и
+        когда рядом ничего не нашлось; вызывающий решает, что делать дальше."""
+        _bill("geocoder reverse")
+        async with httpx.AsyncClient(timeout=cls._TIMEOUT) as client:
+            resp = await client.get(
+                cls.GEOCODE_URL,
+                params={
+                    "lat": latitude,
+                    "lon": longitude,
+                    "fields": cls._FIELDS,
+                    "locale": cls._locale(language),
+                    "key": settings.dgis_api_key,
+                    **(extra or {}),
+                },
+            )
+            # «Ничего не нашлось» 2ГИС отдаёт кодом 404 — и в теле (meta.code),
+            # и, при желании, в статусе. Это не ошибка и не повод ругаться в лог.
+            if resp.status_code == 404:
+                return None
+            if resp.status_code != 200:
+                logger.warning(f"[DGisGeocoding] reverse HTTP {resp.status_code}")
+                return None
+            data = resp.json()
+
+        items = (data.get("result") or {}).get("items") or []
+        if not items:
+            return None
+        return cls._parse_item(items[0], latitude, longitude)
+
+    @classmethod
     async def reverse_geocode(
         cls,
         latitude: float,
@@ -262,29 +305,27 @@ class DGisGeocodingService:
         language: str = "ru",
     ) -> Optional[GeocodingResult]:
         """Координаты → адрес. Возвращает None при любой проблеме —
-        вызывающий код откатывается на Nominatim."""
-        try:
-            _bill("geocoder reverse")
-            async with httpx.AsyncClient(timeout=cls._TIMEOUT) as client:
-                resp = await client.get(
-                    cls.GEOCODE_URL,
-                    params={
-                        "lat": latitude,
-                        "lon": longitude,
-                        "fields": cls._FIELDS,
-                        "locale": cls._locale(language),
-                        "key": settings.dgis_api_key,
-                    },
-                )
-                if resp.status_code != 200:
-                    logger.warning(f"[DGisGeocoding] reverse HTTP {resp.status_code}")
-                    return None
-                data = resp.json()
+        вызывающий код откатывается на Nominatim.
 
-            items = (data.get("result") or {}).get("items") or []
-            if not items:
-                return None
-            return cls._parse_item(items[0], latitude, longitude)
+        Сначала спрашиваем дом или улицу в радиусе, и только если рядом ничего
+        нет — что угодно. Без фильтра 2ГИС охотно отвечает районом: во дворе
+        Братьев Жубановых 289 он выдавал «Актобе, Астана» (название микрорайона),
+        и охранник с диспетчером видели название района вместо адреса. Точку
+        вызова это не двигает — координаты SOS берутся от телефона, из ответа
+        геокодера читается только подпись.
+        """
+        try:
+            near = await cls._reverse_request(
+                latitude,
+                longitude,
+                language,
+                {"type": "building,street", "radius": cls._REVERSE_RADIUS_M},
+            )
+            if near is not None:
+                return near
+            # Ни дома, ни улицы рядом (степь, трасса) — пусть будет хотя бы
+            # населённый пункт с районом.
+            return await cls._reverse_request(latitude, longitude, language)
         except Exception as e:
             # repr: сетевые исключения httpx стрингифицируются в пустоту.
             logger.warning(f"[DGisGeocoding] reverse geocoding error: {e!r}")

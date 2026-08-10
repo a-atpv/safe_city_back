@@ -17,6 +17,7 @@ Docs:
 """
 
 import logging
+import math
 import re
 from collections import Counter
 from typing import List, Optional, Tuple
@@ -25,8 +26,9 @@ import httpx
 import polyline as polyline_lib
 
 from app.core.config import settings
+from app.services.geo import distance_to_geometry_m
 from app.services.geocoding import GeocodingResult
-from app.services.routing import RouteResult, RouteStep
+from app.services.routing import RouteResult, RouteStep, _haversine_km
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +211,11 @@ class DGisGeocodingService:
     GEOCODE_URL = "https://catalog.api.2gis.com/3.0/items/geocode"
     _FIELDS = "items.point,items.address,items.adm_div,items.full_name"
 
+    # Для обратного геокодинга дополнительно просим контуры зданий: по ним
+    # видно, в какой дом точка попала и до какого ближе. Прямому геокодингу
+    # контуры не нужны, поэтому список полей отдельный.
+    _REVERSE_FIELDS = f"{_FIELDS},items.geometry.hover"
+
     # Короче, чем у Nominatim-фолбэка: приложение ждёт весь ответ бэкенда
     # не дольше 10 с, и в этот бюджет должны уложиться оба провайдера.
     _TIMEOUT = 6.0
@@ -260,16 +267,96 @@ class DGisGeocodingService:
             house_number=house_number,
         )
 
+    @staticmethod
+    def _has_street_address(item: dict) -> bool:
+        """Есть ли у объекта улица с номером дома.
+
+        Дом без них подписью быть не может: 2ГИС возвращает такие как
+        «Сооружение» или «Объект», и во дворе они нередко оказываются ближе
+        всех к точке.
+        """
+        components = (item.get("address") or {}).get("components") or []
+        return any(
+            comp.get("type") == "street_number" and comp.get("street")
+            for comp in components
+        )
+
+    @staticmethod
+    def _distance_m(item: dict, latitude: float, longitude: float) -> float:
+        """Метры до объекта: по контуру, если 2ГИС его дал, иначе по центроиду.
+
+        Разница существенная: у длинной свечки центроид может быть в 60 м, а
+        стена — в пяти, и по центроидам «ближайшим» оказывается соседний дом.
+        """
+        distance = distance_to_geometry_m(
+            latitude, longitude, (item.get("geometry") or {}).get("hover")
+        )
+        if distance is not None:
+            return distance
+        point = item.get("point") or {}
+        if "lat" in point and "lon" in point:
+            return _haversine_km(latitude, longitude, point["lat"], point["lon"]) * 1000
+        return math.inf
+
     @classmethod
-    async def _reverse_request(
+    def _pick_reverse_item(
+        cls,
+        items: List[dict],
+        latitude: float,
+        longitude: float,
+    ) -> Optional[dict]:
+        """Выбирает из ответа 2ГИС объект, который и есть адрес точки.
+
+        Нельзя брать items[0]: 2ГИС сортирует выдачу по релевантности, а не по
+        расстоянию. Во дворе Братьев Жубановых он ставил первым дом 289, хотя
+        289в там ближе на семь метров, а 289а — дальше на два: охранник видел
+        адрес соседнего дома и не мог понять, почему. Поэтому расстояние
+        считаем сами, по контурам, и дом, в чей контур точка попала, побеждает
+        любой другой (у него расстояние 0).
+
+        Улица — вариант последней очереди: «улица Братьев Жубановых» без номера
+        полезнее, чем ничего, но хуже любого дома с номером.
+
+        Граница возможностей: 2ГИС отдаёт не больше 10 объектов на запрос
+        (page_size > 10 у этого эндпоинта возвращает пустую выдачу), а в
+        плотной застройке в радиусе 200 м их пятьдесят с лишним. Выбираем из
+        того десятка, что 2ГИС счёл релевантным; на проверенных точках квартала
+        дом, в контур которого попадала точка, в этот десяток попадал всегда.
+        """
+        candidates: List[Tuple[int, float, dict]] = []
+        for item in items:
+            if item.get("type") == "street":
+                tier = 1
+            elif cls._has_street_address(item):
+                tier = 0
+            else:
+                continue
+            candidates.append((tier, cls._distance_m(item, latitude, longitude), item))
+
+        if not candidates:
+            return None
+        tier, distance, item = min(candidates, key=lambda c: (c[0], c[1]))
+        logger.debug(
+            "[DGisGeocoding] reverse %.6f,%.6f → %r (%.0f м, из %d вариантов)",
+            latitude,
+            longitude,
+            item.get("full_name"),
+            distance,
+            len(candidates),
+        )
+        return item
+
+    @classmethod
+    async def _reverse_items(
         cls,
         latitude: float,
         longitude: float,
         language: str,
         extra: Optional[dict] = None,
-    ) -> Optional[GeocodingResult]:
-        """Один запрос к геокодеру. None — и когда 2ГИС ответил ошибкой, и
-        когда рядом ничего не нашлось; вызывающий решает, что делать дальше."""
+    ) -> List[dict]:
+        """Один запрос к геокодеру. Пустой список — и когда 2ГИС ответил
+        ошибкой, и когда рядом ничего не нашлось; вызывающий решает, что
+        делать дальше."""
         _bill("geocoder reverse")
         async with httpx.AsyncClient(timeout=cls._TIMEOUT) as client:
             resp = await client.get(
@@ -277,7 +364,7 @@ class DGisGeocodingService:
                 params={
                     "lat": latitude,
                     "lon": longitude,
-                    "fields": cls._FIELDS,
+                    "fields": cls._REVERSE_FIELDS,
                     "locale": cls._locale(language),
                     "key": settings.dgis_api_key,
                     **(extra or {}),
@@ -286,16 +373,13 @@ class DGisGeocodingService:
             # «Ничего не нашлось» 2ГИС отдаёт кодом 404 — и в теле (meta.code),
             # и, при желании, в статусе. Это не ошибка и не повод ругаться в лог.
             if resp.status_code == 404:
-                return None
+                return []
             if resp.status_code != 200:
                 logger.warning(f"[DGisGeocoding] reverse HTTP {resp.status_code}")
-                return None
+                return []
             data = resp.json()
 
-        items = (data.get("result") or {}).get("items") or []
-        if not items:
-            return None
-        return cls._parse_item(items[0], latitude, longitude)
+        return (data.get("result") or {}).get("items") or []
 
     @classmethod
     async def reverse_geocode(
@@ -307,25 +391,33 @@ class DGisGeocodingService:
         """Координаты → адрес. Возвращает None при любой проблеме —
         вызывающий код откатывается на Nominatim.
 
-        Сначала спрашиваем дом или улицу в радиусе, и только если рядом ничего
-        нет — что угодно. Без фильтра 2ГИС охотно отвечает районом: во дворе
-        Братьев Жубановых 289 он выдавал «Актобе, Астана» (название микрорайона),
-        и охранник с диспетчером видели название района вместо адреса. Точку
-        вызова это не двигает — координаты SOS берутся от телефона, из ответа
-        геокодера читается только подпись.
+        Сначала спрашиваем дом или улицу в радиусе и выбираем из выдачи сами
+        (см. [_pick_reverse_item]), и только если рядом ничего нет — что угодно.
+        Без фильтра 2ГИС охотно отвечает районом: во дворе Братьев Жубановых 289
+        он выдавал «Актобе, Астана» (название микрорайона), и охранник с
+        диспетчером видели название района вместо адреса. Точку вызова это не
+        двигает — координаты SOS берутся от телефона, из ответа геокодера
+        читается только подпись.
         """
         try:
-            near = await cls._reverse_request(
+            near = await cls._reverse_items(
                 latitude,
                 longitude,
                 language,
                 {"type": "building,street", "radius": cls._REVERSE_RADIUS_M},
             )
-            if near is not None:
-                return near
+            best = cls._pick_reverse_item(near, latitude, longitude)
+            if best is not None:
+                return cls._parse_item(best, latitude, longitude)
+
             # Ни дома, ни улицы рядом (степь, трасса) — пусть будет хотя бы
-            # населённый пункт с районом.
-            return await cls._reverse_request(latitude, longitude, language)
+            # населённый пункт с районом. Здесь выдача — административные
+            # единицы без контуров, выбирать среди них по расстоянию нечем,
+            # поэтому берём первую: 2ГИС ставит вперёд самую мелкую.
+            any_items = await cls._reverse_items(latitude, longitude, language)
+            if not any_items:
+                return None
+            return cls._parse_item(any_items[0], latitude, longitude)
         except Exception as e:
             # repr: сетевые исключения httpx стрингифицируются в пустоту.
             logger.warning(f"[DGisGeocoding] reverse geocoding error: {e!r}")

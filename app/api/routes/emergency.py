@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
@@ -13,6 +15,8 @@ from app.schemas import (
 )
 from app.services.emergency import EmergencyService
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/emergency", tags=["Emergency"])
 
 
@@ -24,6 +28,26 @@ async def create_emergency_call(
 ):
     """Create new emergency call (SOS button)"""
     from app.services.dispatch import DispatchService
+    from app.services.service_area import check_service_area
+
+    # Reject calls from outside the served city before touching the DB: there is
+    # no crew that can drive there, and a call left in SEARCHING forever looks to
+    # the user exactly like help that is on its way.
+    area = check_service_area(data.latitude, data.longitude)
+    if not area.allowed:
+        logger.warning(
+            "SOS rejected: user %s is %.1f km from %s (limit %.1f km), point %.6f,%.6f",
+            current_user.id,
+            area.distance_km,
+            area.city,
+            area.radius_km,
+            data.latitude,
+            data.longitude,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=area.as_error_detail(),
+        )
 
     # Check if user already has an active call
     active_call = await EmergencyService.get_active_call(db, current_user.id)

@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     # profile — sending a critical sound without it makes APNS drop the push.
     fcm_ios_critical_alerts: bool = False
     
+    # Зона обслуживания SOS. Экипажи стоят только в одном городе, поэтому вызов
+    # из другого города принимать нельзя — подробности и обоснование радиуса в
+    # app/services/service_area.py. Всё вынесено в переменные окружения: сменить
+    # город, расширить радиус или выключить проверку можно без релиза бэкенда и
+    # тем более без релиза приложений.
+    service_area_enabled: bool = True
+    service_area_city: str = "Актобе"
+    service_area_lat: float = 50.2839
+    service_area_lng: float = 57.1670
+    service_area_radius_km: float = 25.0
+
     # 2GIS / 2ГИС (dev.2gis.com) — один ключ на Routing API и Geocoder API.
     # Пока ключ не задан, маршруты строит OSRM, адреса ищет Nominatim (переход
     # на 2ГИС включается самим фактом появления ключа, см. app/services/dgis.py).
@@ -75,7 +86,12 @@ class Settings(BaseSettings):
     # min поднимать только тогда, когда старый клиент действительно сломан
     # (несовместимый API): он запирает человека в диалоге, а для приложения с
     # тревожной кнопкой это отказ в помощи.
-    app_user_latest_version: str = "1.0.2"
+    # Значения — то, что РЕАЛЬНО лежит в сторе на сейчас, а не то, что собрано:
+    # объявить версию раньше публикации значит отправить человека по кнопке
+    # «Обновить» за сборкой, которой там ещё нет. Поднимать сразу после того,
+    # как обновление раскатано:
+    #   heroku config:set APP_USER_LATEST_VERSION=1.0.2 -a safe-city-back
+    app_user_latest_version: str = "1.0.1"
     app_user_min_version: str = "0.0.0"
     app_guard_latest_version: str = "1.0.1"
     app_guard_min_version: str = "0.0.0"

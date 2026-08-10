@@ -23,6 +23,7 @@ from app.models import (
     Guard,
 )
 from sqlalchemy.orm import selectinload
+from app.core.config import settings
 from app.services.notifications import notification_service
 
 
@@ -52,8 +53,13 @@ class DispatchService:
         5. If no guards available → call status → CANCELLED_BY_SYSTEM
     """
 
-    # Maximum distance in km to consider a guard "nearby"
-    MAX_SEARCH_RADIUS_KM = 50.0
+    # Maximum distance in km to consider a guard "nearby". Read from settings on
+    # every dispatch, not captured at import: the radius is an env var
+    # (DISPATCH_MAX_SEARCH_RADIUS_KM) so it can be widened for another city or a
+    # field test without a backend release.
+    @classmethod
+    def max_search_radius_km(cls) -> float:
+        return settings.dispatch_max_search_radius_km
 
     # A guard's last known location is only trusted for dispatch if it was
     # reported within this window. Anything older is treated as "position
@@ -99,6 +105,7 @@ class DispatchService:
             return None
 
         # Sort by distance to the call location
+        max_radius_km = cls.max_search_radius_km()
         candidates_with_dist = []
         for guard in candidates:
             if guard.current_latitude is not None and guard.current_longitude is not None:
@@ -106,12 +113,12 @@ class DispatchService:
                     call.latitude, call.longitude,
                     guard.current_latitude, guard.current_longitude,
                 )
-                if dist <= cls.MAX_SEARCH_RADIUS_KM:
+                if dist <= max_radius_km:
                     candidates_with_dist.append((guard, dist))
                 else:
                     logger.debug(f"Dispatch: Guard {guard.id} too far ({dist:.1f}km)")
 
-        logger.info(f"Dispatch: {len(candidates_with_dist)} candidates within {cls.MAX_SEARCH_RADIUS_KM}km radius")
+        logger.info(f"Dispatch: {len(candidates_with_dist)} candidates within {max_radius_km}km radius")
 
         if not candidates_with_dist:
             return None

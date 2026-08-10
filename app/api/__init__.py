@@ -1,9 +1,13 @@
 from fastapi import APIRouter
-from app.api.routes import auth, user, emergency, guard_auth, guard, guard_calls, admin_auth, admin, extras, routing, geocode, global_admin, payments
+from app.api.routes import auth, user, emergency, guard_auth, guard, guard_calls, admin_auth, admin, extras, routing, geocode, global_admin, payments, app_update
 from app.api.ws import endpoints as ws_endpoints
 from app.bot import router as telegram_router
 
 api_router = APIRouter(prefix="/api/v1")
+
+# Shared by both apps (public: an outdated client must learn it is outdated
+# before it tries to log in).
+api_router.include_router(app_update.router)
 
 # User app routes
 api_router.include_router(auth.router)

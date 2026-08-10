@@ -66,6 +66,27 @@ class Settings(BaseSettings):
     # на 2ГИС включается самим фактом появления ключа, см. app/services/dgis.py).
     dgis_api_key: Optional[str] = None
 
+    # Версии приложений для баннера «вышло обновление». Задаются переменными
+    # окружения, поэтому объявить новую версию можно сразу после выкладки в
+    # стор — без релиза бэкенда и уж точно без релиза приложений.
+    #   latest — что лежит в сторе: приложение старее покажет предложение
+    #            обновиться, которое можно отложить;
+    #   min    — ниже этой версии работать нельзя: диалог без кнопки «Позже».
+    # min поднимать только тогда, когда старый клиент действительно сломан
+    # (несовместимый API): он запирает человека в диалоге, а для приложения с
+    # тревожной кнопкой это отказ в помощи.
+    app_user_latest_version: str = "1.0.2"
+    app_user_min_version: str = "0.0.0"
+    app_guard_latest_version: str = "1.0.1"
+    app_guard_min_version: str = "0.0.0"
+    app_user_ios_url: str = "https://apps.apple.com/kz/app/id6759368857"
+    app_user_android_url: str = (
+        "https://play.google.com/store/apps/details?id=com.safeCity.appname"
+    )
+    app_guard_android_url: str = (
+        "https://play.google.com/store/apps/details?id=com.safeCityGuard.appname"
+    )
+
     # AWS S3
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None

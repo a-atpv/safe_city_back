@@ -180,7 +180,11 @@ async def update_location(
 ):
     """Update guard's real-time location"""
     await GuardService.update_location(
-        db, current_guard, data.latitude, data.longitude, data.accuracy
+        db, current_guard, data.latitude, data.longitude, data.accuracy,
+        # Возраст фикса, если приложение его сообщило: переотправленный из
+        # очереди старый фикс не должен выглядеть свежей позицией (у
+        # пользовательского маршрута это уже так — теперь одинаково).
+        fix_age_seconds=(data.fix_age_ms or 0) / 1000.0,
     )
     return APIResponse(success=True, message="Location updated")
 

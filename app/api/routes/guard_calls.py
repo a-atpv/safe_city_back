@@ -69,11 +69,26 @@ async def get_available_calls(
     current_guard: Guard = Depends(get_current_guard),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all calls currently searching for a guard"""
+    """List calls searching for a guard THAT THIS GUARD CAN TAKE.
+
+    Раньше здесь отдавались все SEARCHING-вызовы страны без гео-фильтра:
+    охранник, которого диспетчер числил в ~1000 км (и потому не назначил),
+    видел вызов в списке и принимал вручную. Показываем только то, что
+    пройдёт гейт accept — иначе список превращается в приглашение нажать
+    кнопку и получить ошибку.
+    """
+    from app.services.dispatch import DispatchService
+
     if not current_guard.is_online:
         return []
     calls = await EmergencyService.get_available_calls(db)
-    return calls
+    return [
+        call for call in calls
+        # То же правило компании, что и в accept ниже.
+        if (not call.security_company_id
+            or call.security_company_id == current_guard.security_company_id)
+        and DispatchService.check_guard_can_take(current_guard, call).eligible
+    ]
 
 
 @router.post("/call/{call_id}/accept", response_model=EmergencyCallResponse)
@@ -115,6 +130,19 @@ async def accept_call(
     # Verify guard belongs to assigned company
     if call.security_company_id and call.security_company_id != current_guard.security_company_id:
         raise HTTPException(status_code=403, detail="Not authorized for this call")
+
+    # География — те же правила, что у автоназначения: свежая позиция и радиус
+    # диспетчера. Без этого гейта охранник, чью позицию бэкенд знает неверно
+    # (мок-локация, зависший GPS), принимал вызов за ~1000 км, и человек в беде
+    # смотрел на «помощь едет, ~1173 мин». Код ошибки — контракт с приложением.
+    from app.services.dispatch import DispatchService
+
+    eligibility = DispatchService.check_guard_can_take(current_guard, call)
+    if not eligibility.eligible:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=eligibility.as_error_detail(),
+        )
 
     # Assign guard and update status
     call.guard_id = current_guard.id

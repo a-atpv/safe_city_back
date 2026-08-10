@@ -1,6 +1,6 @@
 import logging
 from typing import Optional, List, Tuple
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, desc, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,6 +27,47 @@ class GuardService:
     # swap) any distance is plausible, and refusing the new fix would pin the
     # guard to a position we already know is worthless.
     TELEPORT_WINDOW_SECONDS = 300.0
+    # A fix that claims to be older than this is not worth reasoning about.
+    MAX_FIX_AGE_SECONDS = 3600.0
+
+    # ── Самоизлечение от «запертой» неверной точки ──
+    # Антителепорт-гейт защищает от одиночных выбросов GPS, но у него есть
+    # обратная сторона, проявившаяся в проде: если БД держит неверную точку,
+    # которую что-то продолжает освежать (мок-локация на тестовом устройстве,
+    # зависший провайдер, шлющий один и тот же замороженный фикс), то настоящие
+    # фиксы охранника отбрасываются как «телепорт» ВЕЧНО — окно в 300 с никогда
+    # не истекает, и охранник в Астане числится в Актобе. Поэтому телепорт
+    # перестаёт быть телепортом, когда несколько отклонённых фиксов ПОДРЯД
+    # согласно указывают в одно и то же новое место: один выброс так себя не
+    # ведёт, а реальный переезд — ровно так.
+    RELOCATION_CONFIRM_FIXES = 3
+    # Согласие фиксов между собой: каждый следующий не дальше этого от
+    # предыдущего отклонённого (охранник может ехать, точки дрейфуют).
+    RELOCATION_AGREE_RADIUS_M = 1000.0
+    # Голоса старше этого забываются: три выброса за неделю — не переезд.
+    RELOCATION_VOTE_TTL_SECONDS = 600.0
+
+    # Память голосов на процесс: guard_id → (lat, lng, votes, last_at).
+    # Один uvicorn-процесс на дино (см. Procfile), поэтому словаря достаточно;
+    # при рестарте голоса накапливаются заново за пару минут — приемлемо.
+    _relocation_votes: dict = {}
+
+    # ── Демпфер: покинутая точка не голосует обратно ──
+    # Без него два живых источника устраивают вечный пинг-понг: три настоящих
+    # фикса переворачивают точку на новый город, после чего фиксы старого
+    # источника сами становятся «телепортами», голосуют — и через минуту
+    # переворачивают обратно. Поэтому после подтверждённого переезда точка,
+    # которую мы покинули, попадает в чёрный список: телепорт-фиксы рядом с
+    # ней не голосуют вовсе. Каждый такой фикс ПРОДЛЕВАЕТ список — пока
+    # замороженный источник жив, он сам держит себя в блоке, а замолчит —
+    # запись истечёт. Настоящее возвращение так не блокируется: непрерывно
+    # ведомый охранник (позиция едет вместе с ним) телепортов не порождает,
+    # а после долгой тишины (перелёт) фикс принимается в обход окна.
+    ABANDONED_SUPPRESS_RADIUS_M = 2000.0
+    ABANDONED_SUPPRESS_TTL_SECONDS = 900.0
+
+    # guard_id → (lat, lng, last_seen_at) — покинутые при переезде точки.
+    _abandoned_points: dict = {}
 
     @staticmethod
     async def get_by_email(db: AsyncSession, email: str) -> Optional[Guard]:
@@ -102,10 +143,13 @@ class GuardService:
         """Decide what to do with an incoming fix.
 
         Returns ``(verdict, reason)`` where verdict is one of:
-          ``accept``  — store the coordinate and stamp it;
-          ``confirm`` — same place, worse measurement: keep the stored coordinate
-                        but stamp it, because the guard *was* just measured there;
-          ``reject``  — garbage (a teleport): change nothing and let the point age.
+          ``accept``   — store the coordinate and stamp it;
+          ``confirm``  — same place, worse measurement: keep the stored coordinate
+                         but stamp it, because the guard *was* just measured there;
+          ``reject``   — garbage: change nothing and let the point age;
+          ``teleport`` — implausible jump. Caller decides: a lone jump is a
+                         reject, but several consistent ones are a relocation —
+                         see ``_confirm_relocation``.
 
         The split matters: a rejected fix leaves ``last_location_update`` behind,
         and dispatch/routing read that stamp. Treating "no movement" as "no news"
@@ -124,6 +168,11 @@ class GuardService:
         if prev_at.tzinfo is None:
             prev_at = prev_at.replace(tzinfo=timezone.utc)
         stored_age_s = (now - prev_at).total_seconds()
+
+        # Фикс старше уже сохранённого (переотправка из очереди после потери
+        # сети): позиция в БД новее, менять её по устаревшим данным нельзя.
+        if stored_age_s < 0:
+            return "reject", f"out-of-order fix ({-stored_age_s:.0f}s older than stored)"
 
         # 1. Coarse fix — cell/Wi-Fi or a cold GPS start. Normally not good enough
         #    to route by, BUT never at the price of freezing the point: once the
@@ -146,10 +195,14 @@ class GuardService:
         #    the window where "too fast" still means "impossible": past it the
         #    stored point is stale, and holding on to it would strand a guard whose
         #    phone was off — or who moved cities — at their last known spot.
-        if 0 < stored_age_s <= GuardService.TELEPORT_WINDOW_SECONDS:
-            speed_kmh = (dist_m / 1000.0) / (stored_age_s / 3600.0)
+        if 0 <= stored_age_s <= GuardService.TELEPORT_WINDOW_SECONDS:
+            # Не меньше секунды: раньше `0 < stored_age_s` пропускал БЕЗ
+            # проверки два фикса, пришедшие в одну секунду, — телепорт на
+            # тысячу километров проходил, если успевал в ту же секунду, что
+            # и предыдущий фикс.
+            speed_kmh = (dist_m / 1000.0) / (max(stored_age_s, 1.0) / 3600.0)
             if speed_kmh > GuardService.MAX_PLAUSIBLE_SPEED_KMH:
-                return "reject", f"anomalous speed {speed_kmh:.0f} km/h"
+                return "teleport", f"anomalous speed {speed_kmh:.0f} km/h ({dist_m / 1000.0:.1f} km)"
 
         # 3. Jitter — a barely-there move reported by a *less* accurate fix is noise,
         #    not travel. Keep the tighter position, but treat it as confirmed: we
@@ -165,13 +218,63 @@ class GuardService:
 
         return "accept", "accepted"
 
+    @classmethod
+    def _confirm_relocation(cls, guard: Guard, latitude: float, longitude: float, now: datetime) -> bool:
+        """Голосование отклонённых «телепортов» за то, что охранник правда
+        переместился. True — подряд RELOCATION_CONFIRM_FIXES фиксов согласно
+        указывают в новое место, пора верить им, а не сохранённой точке.
+
+        Якорь голосования — ПОСЛЕДНИЙ отклонённый фикс (цепочка): охранник в
+        новом городе движется, и требовать попадания всех фиксов в один круг
+        значило бы не подтвердить переезд никогда. Выброс дальше километра от
+        цепочки начинает голосование заново — случайные глюки GPS так и
+        рассыпаются, не дойдя до порога.
+        """
+        from app.services.routing import _haversine_km
+
+        guard_id = guard.id
+
+        # Демпфер: фикс, указывающий в недавно покинутую точку, не голосует —
+        # и продлевает её блок (см. комментарий у ABANDONED_SUPPRESS_*).
+        abandoned = cls._abandoned_points.get(guard_id)
+        if abandoned is not None:
+            a_lat, a_lng, a_at = abandoned
+            if (now - a_at).total_seconds() > cls.ABANDONED_SUPPRESS_TTL_SECONDS:
+                cls._abandoned_points.pop(guard_id, None)
+            elif _haversine_km(a_lat, a_lng, latitude, longitude) * 1000.0 \
+                    <= cls.ABANDONED_SUPPRESS_RADIUS_M:
+                cls._abandoned_points[guard_id] = (a_lat, a_lng, now)
+                return False
+
+        prev = cls._relocation_votes.get(guard_id)
+        votes = 1
+        if prev is not None:
+            p_lat, p_lng, p_votes, p_at = prev
+            fresh = (now - p_at).total_seconds() <= cls.RELOCATION_VOTE_TTL_SECONDS
+            agrees = _haversine_km(p_lat, p_lng, latitude, longitude) * 1000.0 \
+                <= cls.RELOCATION_AGREE_RADIUS_M
+            if fresh and agrees:
+                votes = p_votes + 1
+        if votes >= cls.RELOCATION_CONFIRM_FIXES:
+            cls._relocation_votes.pop(guard_id, None)
+            # Точка, которую покидаем, — в чёрный список: ей нельзя тут же
+            # выголосовать себя назад.
+            if guard.current_latitude is not None and guard.current_longitude is not None:
+                cls._abandoned_points[guard_id] = (
+                    guard.current_latitude, guard.current_longitude, now,
+                )
+            return True
+        cls._relocation_votes[guard_id] = (latitude, longitude, votes, now)
+        return False
+
     @staticmethod
     async def update_location(
         db: AsyncSession,
         guard: Guard,
         latitude: float,
         longitude: float,
-        accuracy: Optional[float] = None
+        accuracy: Optional[float] = None,
+        fix_age_seconds: float = 0.0,
     ) -> Guard:
         """Update guard's real-time location.
 
@@ -183,17 +286,51 @@ class GuardService:
         A fix that merely re-measures the same spot less precisely is not garbage:
         it confirms the stored position, so the stamp is refreshed while the
         coordinate (and its better accuracy) is kept.
+
+        ``last_location_update`` — возраст ПОЗИЦИИ, а не запроса: как и у
+        пользователя, штамп ставится моментом получения фикса GPS (``now`` минус
+        ``fix_age_seconds``, относительное значение — сбитые часы устройства его
+        не отравят). Диспетчер и маршрутизация читают этот штамп, поэтому
+        телефон, переотправляющий из очереди фикс десятиминутной давности, не
+        должен выглядеть свежим.
         """
         now = datetime.now(timezone.utc)
 
         # Liveness first — the device is talking to us regardless of fix quality.
         guard.last_seen = now
 
-        verdict, reason = GuardService._evaluate_fix(guard, latitude, longitude, accuracy, now)
-        if verdict == "reject":
+        age = min(max(fix_age_seconds or 0.0, 0.0), GuardService.MAX_FIX_AGE_SECONDS)
+        fix_time = now - timedelta(seconds=age)
+
+        verdict, reason = GuardService._evaluate_fix(guard, latitude, longitude, accuracy, fix_time)
+
+        if verdict == "teleport":
+            if GuardService._confirm_relocation(guard, latitude, longitude, now):
+                verdict = "accept"
+                # INFO: смена города охранником — редкое и диагностически важное
+                # событие; в проде оно должно быть видно.
+                logger.info(
+                    f"Guard {guard.id} relocation confirmed by "
+                    f"{GuardService.RELOCATION_CONFIRM_FIXES} consistent fixes — "
+                    f"accepting ({latitude:.5f}, {longitude:.5f}) over stored "
+                    f"({guard.current_latitude:.5f}, {guard.current_longitude:.5f})"
+                )
+            else:
+                # Тоже INFO, не DEBUG: в проде Heroku пишет только INFO, и
+                # прошлый инцидент (настоящие фиксы месяцами отбрасывались в
+                # пользу мок-точки) в логах было попросту не видно.
+                logger.info(f"Guard {guard.id} location fix rejected ({reason})")
+                await db.flush()
+                return guard
+        elif verdict == "reject":
             logger.debug(f"Guard {guard.id} location fix rejected ({reason})")
             await db.flush()
             return guard
+        # Принятые фиксы голосование НЕ гасят — сознательно. В инциденте два
+        # источника слали вперемешку: мок-точка (принимается, расстояние 0) и
+        # настоящая (отклоняется как телепорт). Если бы каждый принятый фикс
+        # обнулял счётчик, настоящие никогда не набрали бы порог. Голоса и так
+        # ограничены TTL и цепочкой согласия в _confirm_relocation.
 
         if verdict == "accept":
             guard.current_latitude = latitude
@@ -203,7 +340,7 @@ class GuardService:
             # "confirm": same place, worse measurement — keep the coordinate and
             # its accuracy, refresh only the timestamp.
             logger.debug(f"Guard {guard.id} position confirmed in place ({reason})")
-        guard.last_location_update = now
+        guard.last_location_update = fix_time
 
         await db.flush()
 

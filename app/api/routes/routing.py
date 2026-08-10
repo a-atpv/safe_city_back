@@ -12,9 +12,12 @@ These power the Guard App's "active call" map screen with:
   • Guard-to-user distance
 """
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
+from app.core.config import settings
 from app.api.deps import get_current_guard
 from app.models import Guard, CallStatus
 from app.schemas.routing import (
@@ -25,11 +28,44 @@ from app.schemas.routing import (
     ETAResponse,
 )
 from app.schemas.common import APIResponse
-from app.services.routing import RoutingService
+from app.services.routing import RoutingService, _haversine_km
 from app.services.emergency import EmergencyService
 from app.services.user import UserService
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/guard/route", tags=["Guard Navigation"])
+
+#: Насколько старой может быть позиция охранника, чтобы строить от неё маршрут.
+#: Мягче диспетчерских 180 с: маршрут — подсказка уже назначенному охраннику,
+#: а не решение о назначении.
+ROUTE_ORIGIN_MAX_AGE_SECONDS = 600
+
+
+def _require_fresh_guard_location(current_guard: Guard) -> None:
+    """Маршрут строится от позиции охранника из БД — она должна существовать и
+    быть свежей. Коды ошибок MISSING_/STALE_GUARD_LOCATION — контракт с
+    приложением. Сравнение с None, а не truthiness: экватор и нулевой меридиан
+    не «отсутствие координаты»."""
+    if (
+        current_guard.current_latitude is None
+        or current_guard.current_longitude is None
+        or current_guard.last_location_update is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MISSING_GUARD_LOCATION",
+        )
+    last = current_guard.last_location_update
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    if (datetime.now(timezone.utc) - last).total_seconds() > ROUTE_ORIGIN_MAX_AGE_SECONDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="STALE_GUARD_LOCATION",
+        )
 
 
 # ============ Call-specific route ============
@@ -58,21 +94,7 @@ async def get_route_to_call(
             detail="Call not found"
         )
 
-    from datetime import datetime, timezone
-
-    # Guard must have a known location
-    if not current_guard.current_latitude or not current_guard.current_longitude or not current_guard.last_location_update:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="MISSING_GUARD_LOCATION"
-        )
-        
-    time_diff = datetime.now(timezone.utc) - current_guard.last_location_update
-    if time_diff.total_seconds() > 600: # 10 minutes
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="STALE_GUARD_LOCATION"
-        )
+    _require_fresh_guard_location(current_guard)
 
     # Destination: the FRESHEST point we know of, always — plus its age, so the
     # guard sees when it was last confirmed. The call's own coordinates are just
@@ -100,7 +122,20 @@ async def get_route_to_call(
         and user.last_location_update is not None
     ):
         user_at = _aware(user.last_location_update)
-        if dest_at is None or user_at >= dest_at:
+        # Предохранитель на подмену цели: живая точка пользователя, улетевшая
+        # от места вызова дальше радиуса диспетчера, — это не «человек убегает»,
+        # а отравленная координата (мок, зависший GPS, чужое устройство под тем
+        # же аккаунтом). Маршрут тогда строим к месту вызова, а не в другой
+        # город; сам вызов это не двигает.
+        live_jump_km = _haversine_km(
+            call.latitude, call.longitude, user.last_latitude, user.last_longitude
+        )
+        if live_jump_km > settings.dispatch_max_search_radius_km:
+            logger.info(
+                f"Route call {call.id}: user live fix is {live_jump_km:.0f} km "
+                f"from the call point — ignoring it as implausible"
+            )
+        elif dest_at is None or user_at >= dest_at:
             dest_lat, dest_lng = user.last_latitude, user.last_longitude
             dest_at = user_at
             dest_accuracy = user.current_accuracy
@@ -225,11 +260,9 @@ async def get_eta(
     Quick ETA from guard's current location to a destination.
     Lightweight — returns only ETA and distance, no polyline.
     """
-    if not current_guard.current_latitude or not current_guard.current_longitude:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Guard location unknown"
-        )
+    # Раньше здесь был только null-check: ETA считалось от позиции любой
+    # давности — хоть с прошлой смены. Гейт тот же, что у маршрута.
+    _require_fresh_guard_location(current_guard)
 
     route = await RoutingService.get_route(
         origin_lat=current_guard.current_latitude,

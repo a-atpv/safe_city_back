@@ -10,6 +10,7 @@ Handles:
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from math import radians, cos, sin, asin, sqrt
@@ -28,6 +29,33 @@ from app.services.notifications import notification_service
 
 
 logger = logging.getLogger(__name__)
+
+
+#: Коды ошибок в теле ответа accept. Как и outside_service_area — контракт с
+#: приложением охранника: по коду оно показывает конкретное объяснение, а не
+#: общий текст ошибки. Менять только вместе с приложением.
+GUARD_LOCATION_UNKNOWN_CODE = "guard_location_unknown"
+GUARD_TOO_FAR_CODE = "guard_too_far_from_call"
+
+
+@dataclass(frozen=True)
+class GuardCallEligibility:
+    """Может ли охранник взять вызов по географии: свежая позиция + радиус."""
+
+    eligible: bool
+    code: Optional[str] = None
+    message: Optional[str] = None
+    distance_km: Optional[float] = None
+
+    def as_error_detail(self) -> dict:
+        """Тело ответа для HTTPException — структурой, по образцу
+        ServiceAreaCheck.as_error_detail: `code` читает приложение, `message`
+        показывается человеку как есть."""
+        return {
+            "code": self.code,
+            "message": self.message,
+            "distance_km": round(self.distance_km, 1) if self.distance_km is not None else None,
+        }
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -67,6 +95,63 @@ class DispatchService:
     # NOT considered a candidate and the call goes to the next truly-nearest
     # guard instead of to whoever happened to freeze closest when they quit.
     LOCATION_FRESHNESS_SECONDS = 180
+
+    @classmethod
+    def location_is_fresh(cls, guard: Guard, now: Optional[datetime] = None) -> bool:
+        """Есть ли у охранника позиция, которой диспетчер вправе верить."""
+        if (
+            guard.current_latitude is None
+            or guard.current_longitude is None
+            or guard.last_location_update is None
+        ):
+            return False
+        last = guard.last_location_update
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        now = now or datetime.now(timezone.utc)
+        return (now - last).total_seconds() <= cls.LOCATION_FRESHNESS_SECONDS
+
+    @classmethod
+    def check_guard_can_take(cls, guard: Guard, call: EmergencyCall) -> GuardCallEligibility:
+        """География ручного взятия вызова — та же, что у автоназначения.
+
+        Появилось после реального случая: диспетчер честно исключил охранника,
+        которого числил в ~1000 км от вызова («0 candidates within 50.0km»),
+        но вызов остался в SEARCHING, охранник увидел его в списке доступных и
+        принял вручную — accept ничего не проверял, и приложение построило
+        маршрут Актобе → Астана на ~19,5 часов. Ручной путь обязан играть по
+        тем же правилам, что и автоматический: та же свежесть позиции
+        (LOCATION_FRESHNESS_SECONDS) и тот же радиус (env
+        DISPATCH_MAX_SEARCH_RADIUS_KM — им же этот гейт и ослабляется, если
+        когда-нибудь начнёт мешать).
+        """
+        if not cls.location_is_fresh(guard):
+            return GuardCallEligibility(
+                eligible=False,
+                code=GUARD_LOCATION_UNKNOWN_CODE,
+                message=(
+                    "Ваша геопозиция неизвестна или устарела — сервер не может "
+                    "проверить, что вы рядом с вызовом. Проверьте, что GPS "
+                    "включён и приложению разрешена геолокация."
+                ),
+            )
+        distance_km = _haversine_km(
+            call.latitude, call.longitude,
+            guard.current_latitude, guard.current_longitude,
+        )
+        max_radius_km = cls.max_search_radius_km()
+        if distance_km > max_radius_km:
+            return GuardCallEligibility(
+                eligible=False,
+                code=GUARD_TOO_FAR_CODE,
+                message=(
+                    f"Вы в {distance_km:.0f} км от места вызова — дальше "
+                    f"предела в {max_radius_km:.0f} км. Если ваша позиция на "
+                    "карте неверна, проверьте GPS."
+                ),
+                distance_km=distance_km,
+            )
+        return GuardCallEligibility(eligible=True, distance_km=distance_km)
 
     # ──────────────────────────────────────────────
     # Public API
@@ -404,6 +489,7 @@ class DispatchService:
           - active status
           - have a known location
           - whose location is FRESH (reported within LOCATION_FRESHNESS_SECONDS)
+          - within max_search_radius_km of the call
           - belong to the call's company (if one is assigned)
           - not in the exclude list
         """
@@ -437,7 +523,27 @@ class DispatchService:
             select(Guard)
             .where(and_(*conditions))
         )
-        return list(result.scalars().all())
+        guards = list(result.scalars().all())
+
+        # Радиус — уже здесь, а не только в assign_nearest_guard: этим списком
+        # пользуются и минутный ре-бродкаст, и redirect, и раньше они слали
+        # сирену «Экстренный вызов» охранникам на любом расстоянии — в т.ч.
+        # тем, кого автоназначение только что исключило как слишком далёких.
+        max_radius_km = cls.max_search_radius_km()
+        nearby = [
+            g for g in guards
+            if _haversine_km(
+                call.latitude, call.longitude,
+                g.current_latitude, g.current_longitude,
+            ) <= max_radius_km
+        ]
+        dropped = len(guards) - len(nearby)
+        if dropped:
+            logger.info(
+                f"Dispatch: {dropped} available guard(s) beyond "
+                f"{max_radius_km}km of call {call.id} — not notified"
+            )
+        return nearby
 
     @classmethod
     async def _get_declined_guard_ids(cls, db: AsyncSession, call_id: int) -> set:

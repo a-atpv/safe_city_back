@@ -60,7 +60,17 @@ class Settings(BaseSettings):
     # Leave off until that entitlement is on the guard app's provisioning
     # profile — sending a critical sound without it makes APNS drop the push.
     fcm_ios_critical_alerts: bool = False
-    
+    # Аварийный костыль на время, пока в парке есть Android-сборки охраны БЕЗ
+    # сирены (всё, что старше guard-коммита 2677e30, 2026-08-05). SOS-пуш
+    # намеренно data-only — такую посылку Android сам не показывает, её рисует
+    # приложение, — поэтому на старой сборке вызов не даёт ВООБЩЕ ничего: ни
+    # звука, ни строки в шторке. Флаг досылает вторым сообщением обычное
+    # видимое уведомление: не сирена, но человек хотя бы узнает о вызове.
+    # Включать только как временную меру и гасить сразу, как парк обновится, —
+    # на новой сборке это лишний пинг поверх сирены.
+    #   heroku config:set FCM_ANDROID_SOS_LEGACY_FALLBACK=true -a safe-city-back
+    fcm_android_sos_legacy_fallback: bool = False
+
     # Зона обслуживания SOS. Экипажи стоят только в одном городе, поэтому вызов
     # из другого города принимать нельзя — подробности и обоснование радиуса в
     # app/services/service_area.py. Всё вынесено в переменные окружения: сменить

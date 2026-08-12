@@ -159,12 +159,71 @@ class NotificationService:
                 f"FCM SOS: sent siren push to {response.success_count} device(s); "
                 f"{response.failure_count} failed."
             )
+            # WARNING, а не DEBUG: на Heroku уровень INFO, и «почему охраннику не
+            # пришёл вызов» разбирается по этим строкам. Просроченный токен
+            # (UNREGISTERED) выглядит для сервера как успешная отправка на
+            # мёртвый телефон — единственный след остаётся здесь.
             if response.failure_count > 0:
                 for idx, resp in enumerate(response.responses):
                     if not resp.success:
-                        logger.debug(f"FCM SOS: failed for token {tokens[idx]}: {resp.exception}")
+                        logger.warning(
+                            f"FCM SOS: failed for token …{tokens[idx][-12:]}: {resp.exception}"
+                        )
         except Exception as e:
             logger.error(f"FCM SOS: error sending siren push: {e}")
+
+        if settings.fcm_android_sos_legacy_fallback:
+            await self._send_sos_legacy_fallback(tokens, title, body, payload)
+
+    async def _send_sos_legacy_fallback(
+        self,
+        tokens: List[str],
+        title: str,
+        body: str,
+        payload: Dict[str, str],
+    ):
+        """
+        Второе, обычное видимое уведомление — для Android-сборок охраны без
+        сирены (старше guard-коммита 2677e30).
+
+        Такая сборка не рисует data-only посылку из ``_send_sos_push``, и вызов
+        на ней проходит абсолютно молча. Здесь система показывает уведомление
+        сама, помимо приложения: звук будет одноразовый и на громкости
+        уведомлений, но человек узнает о вызове.
+
+        Отдельным сообщением, а не блоком ``notification`` в основном пуше:
+        ``notification`` в той же посылке заставил бы Android показать её самому
+        и не будить фоновый изолят — сирена на новых сборках просто исчезла бы.
+
+        Живёт под выключенным по умолчанию ``FCM_ANDROID_SOS_LEGACY_FALLBACK``
+        (см. app/core/config.py). Приложение охраны выходит только под Android,
+        так что дубль здесь никого не касается; если у ГБР когда-нибудь появится
+        iOS, этот путь надо будет обойти по платформе токена.
+        """
+        message = messaging.MulticastMessage(
+            notification=messaging.Notification(title=title, body=body),
+            data=payload,
+            tokens=tokens,
+            android=messaging.AndroidConfig(
+                priority="high",
+                ttl=SOS_PUSH_TTL,
+                notification=messaging.AndroidNotification(
+                    sound="default",
+                    click_action="FLUTTER_NOTIFICATION_CLICK",
+                ),
+            ),
+        )
+
+        try:
+            response = messaging.send_each_for_multicast(message)
+            logger.warning(
+                "FCM SOS: legacy fallback ON — продублировали вызов обычным "
+                f"уведомлением на {response.success_count} устройств(о); "
+                f"{response.failure_count} не доставлено. Выключите "
+                "FCM_ANDROID_SOS_LEGACY_FALLBACK, когда парк обновится."
+            )
+        except Exception as e:
+            logger.error(f"FCM SOS: error sending legacy fallback push: {e}")
 
     async def notify_call_status_update(self, call: EmergencyCall):
         """Notify the user and guard about a change in their call's status."""
@@ -262,7 +321,10 @@ class NotificationService:
         all_tokens = [guard.fcm_token for guard in guards if guard.fcm_token]
         
         if not all_tokens:
-            logger.info(f"FCM: No active guard tokens found for broadcast of call {call.id}")
+            logger.warning(
+                f"FCM SOS: ни у одного из {len(guards)} доступных охранников нет "
+                f"FCM-токена — вызов {call.id} не разошёлся пушем никому."
+            )
             return
 
         title = "🚨 Экстренный вызов!"
@@ -329,7 +391,15 @@ class NotificationService:
         logger.info(f"WS: New call offer notification sent to guard {guard.id}")
 
         # 2. Send via FCM — siren push, so a backgrounded/killed app still screams.
-        if guard.fcm_token:
+        if not guard.fcm_token:
+            # Молчаливый пропуск здесь означал, что вызов ушёл «в никуда»: по
+            # логам не отличить телефон без токена от телефона, до которого пуш
+            # не долетел. Для тревожной кнопки это первое, что нужно знать.
+            logger.warning(
+                f"FCM SOS: у охранника {guard.id} нет FCM-токена — вызов "
+                f"{call.id} уходит только в WebSocket. Пуш не будет отправлен."
+            )
+        else:
             await self._send_sos_push(
                 tokens=[guard.fcm_token],
                 title="🚨 Новый вызов!",

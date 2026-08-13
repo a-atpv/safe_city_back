@@ -5,6 +5,7 @@ from app.models import EmergencyCall, Guard, User
 from firebase_admin import messaging
 from app.core.config import settings
 from app.core.firebase import init_firebase
+import asyncio
 import json
 import logging
 
@@ -174,6 +175,41 @@ class NotificationService:
 
         if settings.fcm_android_sos_legacy_fallback:
             await self._send_sos_legacy_fallback(tokens, title, body, payload)
+
+        if settings.sos_push_resend_delay > 0:
+            asyncio.create_task(
+                self._resend_sos_push(tokens, payload, android_config)
+            )
+
+    async def _resend_sos_push(
+        self,
+        tokens: List[str],
+        payload: Dict[str, str],
+        android_config: messaging.AndroidConfig,
+    ):
+        """
+        Дубль SOS data-пуша через ``sos_push_resend_delay`` секунд — страховка
+        от «припаркованного» первого пуша (обоснование у флага в config.py).
+
+        Только Android-конфиг, без APNS: на iOS проблемы парковки нет, а второй
+        видимый алерт там дал бы двойной баннер. Чистый data-пуш iOS в фоне
+        просто игнорирует.
+        """
+        try:
+            await asyncio.sleep(settings.sos_push_resend_delay)
+            message = messaging.MulticastMessage(
+                data=payload,
+                tokens=tokens,
+                android=android_config,
+            )
+            response = messaging.send_each_for_multicast(message)
+            logger.info(
+                f"FCM SOS: resent siren push (anti-parking, "
+                f"+{settings.sos_push_resend_delay:.0f}s) to "
+                f"{response.success_count} device(s); {response.failure_count} failed."
+            )
+        except Exception as e:
+            logger.error(f"FCM SOS: error resending siren push: {e}")
 
     async def _send_sos_legacy_fallback(
         self,

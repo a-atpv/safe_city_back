@@ -3,10 +3,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db, decode_token
-from app.models import User, Guard, CompanyAdmin
+from app.models import User, Guard, CompanyAdmin, GlobalAdmin
 from app.services import UserService
 from app.services.guard import GuardService
 from app.services.admin import CompanyAdminService
+from app.services.global_admin import GlobalAdminService
 
 security = HTTPBearer()
 
@@ -192,6 +193,61 @@ async def require_admin_owner(
             detail="Owner privileges required"
         )
     return current_admin
+
+
+# ============ Global Admin Dependencies ============
+
+# auto_error=False so a missing Authorization header yields 401 (like every other
+# rejection here) instead of the 403 HTTPBearer raises on its own.
+global_admin_security = HTTPBearer(auto_error=False)
+
+
+async def get_current_global_admin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(global_admin_security),
+    db: AsyncSession = Depends(get_db)
+) -> GlobalAdmin:
+    """Get current authenticated global admin from JWT token"""
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    payload = decode_token(token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if payload.get("type") != "access" or payload.get("role") != "global_admin":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid global admin token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    admin_id = payload.get("sub")
+    if not admin_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    admin = await GlobalAdminService.get_by_id(db, int(admin_id))
+    if not admin or not admin.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Global admin not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return admin
 
 
 # ============ WebSocket Dependencies ============

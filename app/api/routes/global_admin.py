@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db, create_access_token, create_refresh_token
-from app.api.deps import get_current_admin # I might need a new get_current_global_admin
+from app.api.deps import get_current_global_admin
 from app.models import GlobalAdmin
 from app.schemas.admin import AdminLoginRequest, AdminTokenResponse, AdminCreate, AdminResponse
 from app.schemas.common import APIResponse
@@ -31,10 +31,16 @@ class GlobalBroadcastRequest(BaseModel):
     data: Optional[Dict[str, str]] = None
 
 @router.post("/init", response_model=APIResponse)
-async def initialize_admins(db: AsyncSession = Depends(get_db)):
+async def initialize_admins(
+    current_admin: GlobalAdmin = Depends(get_current_global_admin),
+    db: AsyncSession = Depends(get_db)
+):
     """
     Trigger the system bootstrap process.
     Creates initial company admin and global admin if they don't exist.
+
+    Note: bootstrap also runs automatically on application startup (see app.main.lifespan),
+    so the very first global admin is created there, not through this endpoint.
     """
     await run_bootstrap()
     return APIResponse(success=True, message="Bootstrap process completed successfully")
@@ -65,7 +71,7 @@ async def global_login(data: AdminLoginRequest, db: AsyncSession = Depends(get_d
 @router.post("/broadcast", response_model=APIResponse)
 async def broadcast_notification(
     data: GlobalBroadcastRequest,
-    # TODO: Add global admin dependency
+    current_admin: GlobalAdmin = Depends(get_current_global_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Broadcast notification to all users and guards"""

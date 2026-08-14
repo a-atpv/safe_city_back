@@ -30,6 +30,11 @@ class SecurityCompany(Base):
     contract_start = Column(DateTime(timezone=True), nullable=True)
     contract_end = Column(DateTime(timezone=True), nullable=True)
     
+    # Colour this company is drawn with on the global admin map (#RRGGBB).
+    # Assigned from a fixed palette when the company is created, so two companies
+    # never end up with the same shade by accident.
+    map_color = Column(String(7), nullable=True)
+
     # Settings
     is_active = Column(Boolean, default=True)
     is_accepting_calls = Column(Boolean, default=True)

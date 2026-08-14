@@ -1,8 +1,9 @@
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, Union
 # from app.api.ws.manager import manager  # Moved inside methods to avoid circular import
-from app.models import EmergencyCall, Guard, User
+from app.models import CallStatus, EmergencyCall, Guard, User
 from firebase_admin import messaging
+from sqlalchemy import select
 from app.core.config import settings
 from app.core.firebase import init_firebase
 import asyncio
@@ -19,6 +20,11 @@ SOS_SIREN_IOS_SOUND = "sos_siren.caf"
 # An SOS push that arrives late is worse than useless — the offer has already
 # escalated to other guards by then, so let FCM drop it instead of queueing it.
 SOS_PUSH_TTL = timedelta(seconds=120)
+
+# Статусы, в которых вызов всё ещё ждёт ответа охраны — то есть звать сиреной
+# по нему уместно. Всё остальное (принят, завершён, отменён) означает, что
+# сирена уже никому не адресована.
+SOS_UNANSWERED_STATUSES = (CallStatus.SEARCHING, CallStatus.OFFER_SENT)
 
 
 class NotificationService:
@@ -91,6 +97,8 @@ class NotificationService:
         title: str,
         body: str,
         data: Dict[str, Any],
+        call_id: int,
+        offered_to_guard_id: Optional[int] = None,
     ):
         """
         Send an SOS alert that makes the guard's phone sound a siren, including
@@ -109,6 +117,11 @@ class NotificationService:
           the alert is built here in the APNS payload with the bundled siren as
           its sound. Without the critical-alerts entitlement iOS plays it once
           and still honours the mute switch; see ``fcm_ios_critical_alerts``.
+
+        ``call_id`` и ``offered_to_guard_id`` нужны только отложенному дублю
+        (``_resend_sos_push``): по ним он перед отправкой проверяет, что вызов
+        всё ещё ждёт ответа. ``offered_to_guard_id`` задаётся для адресного
+        оффера и остаётся None для веерной рассылки.
         """
         init_firebase()
 
@@ -178,18 +191,89 @@ class NotificationService:
 
         if settings.sos_push_resend_delay > 0:
             asyncio.create_task(
-                self._resend_sos_push(tokens, payload, android_config)
+                self._resend_sos_push(
+                    tokens,
+                    payload,
+                    android_config,
+                    call_id=call_id,
+                    offered_to_guard_id=offered_to_guard_id,
+                )
             )
+
+    async def _sos_still_needs_an_answer(
+        self,
+        call_id: int,
+        offered_to_guard_id: Optional[int] = None,
+    ) -> bool:
+        """
+        Ждёт ли вызов ответа охраны прямо сейчас — то есть уместно ли ещё звать
+        по нему сиреной.
+
+        ``offered_to_guard_id`` задаётся для адресного оффера: если за это время
+        оффер переехал к другому охраннику, прежнему адресату звонить нечего —
+        этот вызов он уже не возьмёт.
+        """
+        from app.core.database import async_session
+
+        try:
+            async with async_session() as db:
+                result = await db.execute(
+                    select(EmergencyCall.status, EmergencyCall.guard_id).where(
+                        EmergencyCall.id == call_id
+                    )
+                )
+                row = result.first()
+        except Exception as e:
+            # База недоступна — решаем в пользу доставки: пропущенный дубль
+            # может стоить вызова целиком, лишний стоит одной лишней сирены.
+            logger.error(
+                f"FCM SOS: не удалось проверить состояние вызова {call_id} "
+                f"перед повтором пуша ({e}). Отправляем повтор."
+            )
+            return True
+
+        if row is None:
+            logger.warning(
+                f"FCM SOS: вызов {call_id} не найден — повтор пуша не отправляем."
+            )
+            return False
+
+        status, guard_id = row
+
+        if status not in SOS_UNANSWERED_STATUSES:
+            logger.info(
+                f"FCM SOS: вызов {call_id} уже в статусе "
+                f"{getattr(status, 'value', status)} — повтор пуша не нужен."
+            )
+            return False
+
+        if offered_to_guard_id is not None and guard_id != offered_to_guard_id:
+            logger.info(
+                f"FCM SOS: вызов {call_id} уже предложен охраннику {guard_id}, "
+                f"а не {offered_to_guard_id} — повтор пуша не отправляем."
+            )
+            return False
+
+        return True
 
     async def _resend_sos_push(
         self,
         tokens: List[str],
         payload: Dict[str, str],
         android_config: messaging.AndroidConfig,
+        call_id: int,
+        offered_to_guard_id: Optional[int] = None,
     ):
         """
         Дубль SOS data-пуша через ``sos_push_resend_delay`` секунд — страховка
         от «припаркованного» первого пуша (обоснование у флага в config.py).
+
+        Перед отправкой вызов перечитывается из базы. За время сна его успевают
+        принять, и дубль, прилетевший принявшему охраннику, снова запускает у
+        него сирену — а выключить её на экране активного вызова уже некому
+        (жалоба 2026-08-14). Флаг ``_inAppPlaying`` на устройстве от этого не
+        спасает: приём вызова закрывает шторку оффера и вызывает
+        ``SosSiren.stop()``, флаг сбрасывается — и дубль стартует с нуля.
 
         Только Android-конфиг, без APNS: на iOS проблемы парковки нет, а второй
         видимый алерт там дал бы двойной баннер. Чистый data-пуш iOS в фоне
@@ -197,6 +281,12 @@ class NotificationService:
         """
         try:
             await asyncio.sleep(settings.sos_push_resend_delay)
+
+            if not await self._sos_still_needs_an_answer(
+                call_id, offered_to_guard_id
+            ):
+                return
+
             message = messaging.MulticastMessage(
                 data=payload,
                 tokens=tokens,
@@ -370,6 +460,7 @@ class NotificationService:
             tokens=list(set(all_tokens)), # Unique tokens
             title=title,
             body=body,
+            call_id=call.id,
             data={
                 "call_id": str(call.id),
                 "type": "new_emergency_broadcast",
@@ -440,6 +531,8 @@ class NotificationService:
                 tokens=[guard.fcm_token],
                 title="🚨 Новый вызов!",
                 body=f"Нужна ваша помощь! Расстояние: {round(distance_km, 1)} км",
+                call_id=call.id,
+                offered_to_guard_id=guard.id,
                 data={
                     "call_id": str(call.id),
                     "type": "call_offer",

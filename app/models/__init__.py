@@ -1,4 +1,11 @@
-from app.models.user import User, Subscription, UserStatus, UserRole, SubscriptionStatus
+from app.models.user import (
+    User,
+    Subscription,
+    UserStatus,
+    UserRole,
+    SubscriptionStatus,
+    is_subscription_current,
+)
 from app.models.emergency import EmergencyCall, CallStatusHistory, CallStatus
 from app.models.security_company import SecurityCompany
 from app.models.guard import Guard, GuardShift, GuardSettings
@@ -17,6 +24,7 @@ __all__ = [
     "UserStatus",
     "UserRole",
     "SubscriptionStatus",
+    "is_subscription_current",
     # Emergency
     "EmergencyCall",
     "CallStatusHistory",

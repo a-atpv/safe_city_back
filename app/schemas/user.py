@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
 
+from app.models.user import SubscriptionStatus, is_subscription_current
 from app.schemas.fields import AvatarUrl
 
 
@@ -86,6 +87,26 @@ class SubscriptionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="after")
+    def _lapsed_reads_as_expired(self) -> "SubscriptionResponse":
+        """Report a lapsed subscription as expired, whatever the row still says.
+
+        The stored status lags reality: the daily job only flips Robokassa subs,
+        and after a grace window at that, so a row can read `active` for days
+        past `expires_at` — a hand-written grant reads that way forever. Clients
+        decide what to show from this status alone, so sending `active` paints a
+        green "Подписка активна" over a subscription that `require_subscription`
+        will refuse with 403 — the user is told they are covered and finds out
+        otherwise by pressing SOS.
+
+        Access itself is unaffected; this only stops the API from claiming
+        otherwise. See [is_subscription_current].
+        """
+        if not is_subscription_current(self.status, self.expires_at):
+            if self.status == SubscriptionStatus.ACTIVE.value:
+                self.status = SubscriptionStatus.EXPIRED.value
+        return self
 
 
 # ============ Location Schemas ============

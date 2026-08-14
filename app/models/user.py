@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+from typing import Optional, Union
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Enum, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -22,6 +25,32 @@ class SubscriptionStatus(str, enum.Enum):
     EXPIRED = "expired"
     CANCELLED = "cancelled"
     PENDING = "pending"
+
+
+def is_subscription_current(
+    status: Union[SubscriptionStatus, str, None],
+    expires_at: Optional[datetime],
+    now: Optional[datetime] = None,
+) -> bool:
+    """Whether a subscription row actually grants access right now.
+
+    `status == active` is not enough on its own: a lapsed row keeps that status
+    until the daily job flips it, and a hand-written grant is flipped by nothing
+    at all — so the stored status runs ahead of reality by up to days. Access
+    ends at `expires_at`, and everything user-facing must agree on that.
+
+    The SQL form of the same rule lives in `UserService.has_active_subscription`
+    and `app.bot.stats` — keep the three in step.
+    """
+    if status != SubscriptionStatus.ACTIVE:
+        return False
+    if expires_at is None:
+        return True  # open-ended grant: never lapses
+    # Rows written before the column was timezone-aware read back naive; treat
+    # them as UTC rather than crashing the comparison.
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at > (now or datetime.now(timezone.utc))
 
 
 class User(Base):
@@ -95,5 +124,11 @@ class Subscription(Base):
     # Relationships
     user = relationship("User", back_populates="subscription")
     payments = relationship("Payment", back_populates="subscription")
+
+    @property
+    def is_current(self) -> bool:
+        """True while this subscription still grants access — see
+        [is_subscription_current]."""
+        return is_subscription_current(self.status, self.expires_at)
 
 

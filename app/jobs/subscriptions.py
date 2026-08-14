@@ -6,7 +6,8 @@
 Two passes, both idempotent and safe to run more than once a day:
   1. renew  — charge recurring child payments for Robokassa subs nearing expiry
               (capture is confirmed later on ResultURL, which extends the sub).
-  2. expire — flip Robokassa subs to EXPIRED once past the renewal retry window.
+  2. expire — flip lapsed subs to EXPIRED: Robokassa ones once past the renewal
+              retry window, hand-written grants right at `expires_at`.
 """
 import argparse
 import asyncio

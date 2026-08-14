@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import notify
@@ -305,21 +305,39 @@ class PaymentService:
     async def expire_lapsed_subscriptions(
         db: AsyncSession, *, now: Optional[datetime] = None, dry_run: bool = False
     ) -> dict:
-        """Flip Robokassa subs to EXPIRED once past the renewal retry window.
+        """Flip lapsed subs to EXPIRED.
 
         Access already ends at `expires_at` via `has_active_subscription`; this
-        is bookkeeping so a lapsed sub stops being retried and reads as EXPIRED.
-        Scoped to Robokassa so manual grants / store subs are left untouched.
+        is bookkeeping so a lapsed sub stops being retried and reads as EXPIRED
+        everywhere it is listed.
+
+        Two clocks, because the wait means different things:
+          * Robokassa — only past the renewal retry window, so a sub still being
+            charged isn't declared dead mid-retry.
+          * everything else (hand-written grants, anything with no provider) —
+            right at `expires_at`: nothing is going to renew them, so waiting
+            only keeps a dead row looking alive.
         """
         now = now or datetime.now(timezone.utc)
-        cutoff = now - timedelta(days=RENEW_RETRY_GRACE_DAYS)
+        retry_cutoff = now - timedelta(days=RENEW_RETRY_GRACE_DAYS)
+        # coalesce, not `!=`: NULL != 'robokassa' is NULL in SQL, which would
+        # skip exactly the hand-written grants this pass exists for.
+        provider = func.coalesce(Subscription.payment_provider, "")
         subs = (
             await db.execute(
                 select(Subscription).where(
                     Subscription.status == SubscriptionStatus.ACTIVE,
-                    Subscription.payment_provider == "robokassa",
                     Subscription.expires_at.isnot(None),
-                    Subscription.expires_at <= cutoff,
+                    or_(
+                        and_(
+                            provider == "robokassa",
+                            Subscription.expires_at <= retry_cutoff,
+                        ),
+                        and_(
+                            provider != "robokassa",
+                            Subscription.expires_at <= now,
+                        ),
+                    ),
                 )
             )
         ).scalars().all()

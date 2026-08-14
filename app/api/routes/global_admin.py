@@ -196,6 +196,46 @@ async def update_company(
     return next(c for c in companies if c["id"] == company_id)
 
 
+@router.delete("/companies/{company_id}", response_model=APIResponse)
+async def delete_company(
+    company_id: int,
+    current_admin: GlobalAdmin = Depends(get_current_global_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a company — only while nothing references it.
+
+    A company with guards, admins or calls is never deleted: the foreign keys
+    would refuse it anyway, and its calls are history that must not disappear.
+    Such a company is switched off instead (is_active=false), which keeps it out
+    of dispatch while its records stay intact.
+    """
+    company = await PlatformCompanyService.get_company(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    usage = await PlatformCompanyService.company_usage(db, company_id)
+    if any(usage.values()):
+        # Русский текст: этот ответ панель показывает оператору как есть.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Компанию нельзя удалить, за ней числятся: "
+                f"охранников — {usage['guards']}, админов — {usage['admins']}, "
+                f"вызовов — {usage['calls']}. Отключите её вместо удаления: "
+                f"«Изменить» → снять «Компания активна»."
+            ),
+        )
+
+    name = company.name
+    await PlatformCompanyService.delete_company(db, company)
+
+    logger.warning(
+        "Global admin %s (%s) deleted company '%s' (id=%s)",
+        current_admin.id, current_admin.email, name, company_id,
+    )
+    return APIResponse(success=True, message=f"Компания «{name}» удалена")
+
+
 @router.post("/companies/{company_id}/login-as", response_model=AdminTokenResponse)
 async def login_as_company(
     company_id: int,

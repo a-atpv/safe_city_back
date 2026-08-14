@@ -2,7 +2,7 @@ from typing import Optional, List, Tuple
 from collections import Counter
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import GlobalAdmin, CompanyAdmin, User, Guard, SecurityCompany
+from app.models import GlobalAdmin, CompanyAdmin, User, Guard, SecurityCompany, EmergencyCall
 from app.core.security import get_password_hash, verify_password
 from app.services.admin import CompanyAdminService
 from app.services.notifications import notification_service
@@ -265,6 +265,30 @@ class PlatformCompanyService:
         await db.flush()
         await db.refresh(company)
         return company
+
+    @staticmethod
+    async def company_usage(db: AsyncSession, company_id: int) -> dict:
+        """Everything that references a company — deleting is only safe at all zeros.
+
+        Counts every row, not just the active ones: a deactivated guard or admin
+        still holds the foreign key, and calls are the company's history.
+        """
+        usage = {}
+        for key, model in (
+            ("guards", Guard),
+            ("admins", CompanyAdmin),
+            ("calls", EmergencyCall),
+        ):
+            usage[key] = (await db.execute(
+                select(func.count()).select_from(model)
+                .where(model.security_company_id == company_id)
+            )).scalar_one()
+        return usage
+
+    @staticmethod
+    async def delete_company(db: AsyncSession, company: SecurityCompany) -> None:
+        await db.delete(company)
+        await db.flush()
 
     @staticmethod
     async def map_overview(db: AsyncSession) -> Tuple[List[dict], List[Guard]]:

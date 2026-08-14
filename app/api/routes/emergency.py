@@ -65,8 +65,11 @@ async def create_emergency_call(
     
     # Find and assign the nearest available guard
     guard = await DispatchService.assign_nearest_guard(db, call)
-    # Note: if guard is None, call stays in SEARCHING status
-    # and can be manually assigned by admin or retried later
+    if not guard:
+        # Call stays in SEARCHING; фоновый ретрай переподбирает группу, как
+        # только кто-то освободится — раньше «retried later» было только
+        # обещанием в комментарии, и вызов ждал исключительно ручного принятия.
+        DispatchService.schedule_retry_dispatch(call.id)
     
     # Re-fetch call with updated relationships
     call = await EmergencyService.get_by_id(db, call.id)

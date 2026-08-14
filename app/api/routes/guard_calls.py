@@ -184,7 +184,8 @@ async def decline_call(
     else:
         return APIResponse(
             success=True,
-            message="Call declined. No available guards found — call cancelled."
+            message="Call declined. No guards free right now — the call stays "
+                    "in search and dispatch keeps retrying."
         )
 
 
@@ -297,7 +298,8 @@ async def redirect_call(
         )
     return APIResponse(
         success=True,
-        message="Вызов перенаправлен, но свободных служб рядом не найдено — вызов отменён."
+        message="Вызов перенаправлен. Свободных служб прямо сейчас нет — "
+                "продолжаем поиск, вызов остаётся активным."
     )
 
 

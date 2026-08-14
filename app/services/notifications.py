@@ -380,14 +380,18 @@ class NotificationService:
 
         # 2. Send via FCM to User
         if call.user and call.user.fcm_token:
+            # Ключи — это CallStatus.value (нижний регистр). С ключами в
+            # верхнем регистре словарь не совпадал никогда, и все пуши уходили
+            # с дефолтным «Статус вызова обновлен: accepted».
             status_texts = {
-                "OFFER_SENT": "Поиск ближайшего охранника...",
-                "ACCEPTED": "Охранник принял вызов и выехал к вам.",
-                "ARRIVED": "Охранник прибыл на место.",
-                "COMPLETED": "Вызов успешно завершен.",
-                "CANCELLED": "Ваш вызов был отменен.",
-                "CANCELLED_BY_USER": "Вызов отменен вами.",
-                "CANCELLED_BY_SYSTEM": "Ваш вызов был отменен системой.",
+                "searching": "Ищем свободную группу охраны...",
+                "offer_sent": "Поиск ближайшего охранника...",
+                "accepted": "Охранник принял вызов и выехал к вам.",
+                "en_route": "Охранник выехал к вам.",
+                "arrived": "Охранник прибыл на место.",
+                "completed": "Вызов успешно завершен.",
+                "cancelled_by_user": "Вызов отменен вами.",
+                "cancelled_by_system": "Ваш вызов был отменен системой.",
             }
             body = status_texts.get(call.status.value, f"Статус вызова обновлен: {call.status.value}")
             

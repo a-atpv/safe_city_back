@@ -9,17 +9,32 @@ from app.services.guard import GuardService
 from app.services.admin import CompanyAdminService
 from app.services.global_admin import GlobalAdminService
 
-security = HTTPBearer()
+# auto_error=False so a missing or non-Bearer Authorization header yields 401
+# (like every other credential rejection here) instead of the 403 HTTPBearer
+# raises on its own: clients key their token refresh on 401, and 403 here means
+# "authenticated but not permitted" — inactive account, no subscription.
+security = HTTPBearer(auto_error=False)
+
+
+def _bearer_token(credentials: Optional[HTTPAuthorizationCredentials]) -> str:
+    """The token out of the Authorization header, or 401 when there isn't one."""
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
 
 
 # ============ User Dependencies ============
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """Get current authenticated user from JWT token"""
-    token = credentials.credentials
+    token = _bearer_token(credentials)
     payload = decode_token(token)
 
     if not payload:
@@ -94,11 +109,11 @@ async def require_subscription(
 # ============ Guard Dependencies ============
 
 async def get_current_guard(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> Guard:
     """Get current authenticated guard from JWT token"""
-    token = credentials.credentials
+    token = _bearer_token(credentials)
     payload = decode_token(token)
 
     if not payload:
@@ -143,11 +158,11 @@ async def get_current_guard(
 # ============ Company Admin Dependencies ============
 
 async def get_current_admin(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> CompanyAdmin:
     """Get current authenticated company admin from JWT token"""
-    token = credentials.credentials
+    token = _bearer_token(credentials)
     payload = decode_token(token)
 
     if not payload:
@@ -197,24 +212,12 @@ async def require_admin_owner(
 
 # ============ Global Admin Dependencies ============
 
-# auto_error=False so a missing Authorization header yields 401 (like every other
-# rejection here) instead of the 403 HTTPBearer raises on its own.
-global_admin_security = HTTPBearer(auto_error=False)
-
-
 async def get_current_global_admin(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(global_admin_security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> GlobalAdmin:
     """Get current authenticated global admin from JWT token"""
-    if not credentials or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = credentials.credentials
+    token = _bearer_token(credentials)
     payload = decode_token(token)
 
     if not payload:

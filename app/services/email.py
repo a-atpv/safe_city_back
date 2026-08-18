@@ -69,12 +69,8 @@ class EmailService:
 
 async def send_otp_to_email(email: str) -> tuple[bool, Optional[str]]:
     """Generate, store and send OTP to email"""
-    normalized_email = email.strip().lower()
-    if normalized_email == "aldiyar.dev@gmail.com":
-        otp = "1234"
-    else:
-        otp = OTPService.generate_otp()
-        
+    otp = OTPService.generate_otp()
+
     stored = await OTPService.store_otp(email, otp)
     
     if not stored:
@@ -83,7 +79,7 @@ async def send_otp_to_email(email: str) -> tuple[bool, Optional[str]]:
     
     success = await EmailService.send_otp(email, otp)
     
-    if settings.debug or normalized_email == "aldiyar.dev@gmail.com":
+    if settings.debug:
         # Return OTP in debug/mock mode for testing
         return success, otp
     return success, None

@@ -32,8 +32,6 @@ class OTPService:
             redis = get_redis()
             if not redis:
                 logger.error("OTPService: Redis client is not initialized")
-                if key_id == "aldiyar.dev@gmail.com":
-                    return True
                 return False
 
             key = f"{cls.OTP_PREFIX}{key_id}"
@@ -49,8 +47,6 @@ class OTPService:
             return True
         except Exception as e:
             logger.error(f"OTPService: Error storing OTP for {identifier}: {e}")
-            if identifier.strip().lower() == "aldiyar.dev@gmail.com":
-                return True
             return False
     
     @classmethod
@@ -62,11 +58,6 @@ class OTPService:
         try:
             key_id = identifier.strip().lower()
             clean_otp = otp.strip()
-            
-            # Special bypass for developer/test email
-            if key_id == "aldiyar.dev@gmail.com" and clean_otp == "1234":
-                logger.info(f"OTPService: Bypass verification for {key_id}")
-                return True
 
             redis = get_redis()
             if not redis:
